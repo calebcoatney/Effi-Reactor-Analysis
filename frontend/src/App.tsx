@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { LoadResponse } from "./api";
+import { downloadExcel } from "./api";
 import FileSelector from "./components/FileSelector";
 import OverviewPlot from "./components/OverviewPlot";
 import CycleNavigator from "./components/CycleNavigator";
@@ -22,6 +23,23 @@ function App() {
 
       {loadResult && (
         <>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+            <button
+              onClick={downloadExcel}
+              style={{
+                padding: "6px 14px",
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: "pointer",
+                borderRadius: 4,
+                border: "1px solid #059669",
+                background: "#059669",
+                color: "#fff",
+              }}
+            >
+              📥 Export Integration Results (.xlsx)
+            </button>
+          </div>
           <OverviewPlot onCycleClick={setSelectedCycle} />
           <hr />
           <CycleNavigator

@@ -126,3 +126,7 @@ export function getCycleData(
 export function getOverview(maxPoints = 2000): Promise<OverviewResponse> {
   return apiFetch(`/overview?max_points=${maxPoints}`);
 }
+
+export function downloadExcel(): void {
+  window.open(`${BASE}/export/excel`, "_blank");
+}

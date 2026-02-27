@@ -293,6 +293,42 @@ def get_overview(max_points: int = 2000):
 
 
 # ---------------------------------------------------------------------------
+# GET /export/excel  –  download integration results as .xlsx
+# ---------------------------------------------------------------------------
+
+
+@app.get("/export/excel")
+def export_excel():
+    """Return an Excel workbook with High-P and Low-P integration tables."""
+    _require_loaded()
+    if state.results is None or state.results.empty:
+        raise HTTPException(status_code=400, detail="No integration results available.")
+
+    import io
+    from fastapi.responses import StreamingResponse
+
+    results = state.results
+
+    # Pivot to wide: rows = cycle, columns = species
+    hp = results.pivot(index="cycle_id", columns="species", values="high_p_area")
+    lp = results.pivot(index="cycle_id", columns="species", values="low_p_area")
+    hp.index.name = "Cycle"
+    lp.index.name = "Cycle"
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        hp.to_excel(writer, sheet_name="High P Integration (% s)")
+        lp.to_excel(writer, sheet_name="Low P Integration (% s)")
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=integration_results.xlsx"},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Static file serving for the production frontend build
 # ---------------------------------------------------------------------------
 
