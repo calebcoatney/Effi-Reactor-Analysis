@@ -8,3 +8,5 @@ ExportData*.txt
 ~$*
 260121_CZA-flueCO2/
 .claude/
+node_modules/
+dist/
