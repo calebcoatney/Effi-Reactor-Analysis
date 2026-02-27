@@ -19,6 +19,20 @@ export interface LoadResponse {
   time_range: { start: string; end: string };
 }
 
+export interface BrowseResponse {
+  path: string;
+  parent: string | null;
+  dirs: string[];
+  files: string[];
+}
+
+export interface DiscoverResponse {
+  path: string;
+  reactor_files: string[];
+  ir_file: string | null;
+  oxygen_file: string | null;
+}
+
 export interface WindowInfo {
   start: string;
   end: string;
@@ -82,6 +96,14 @@ export function loadExperiment(req: LoadRequest): Promise<LoadResponse> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
+}
+
+export function browseDirectory(path = "."): Promise<BrowseResponse> {
+  return apiFetch(`/browse?path=${encodeURIComponent(path)}`);
+}
+
+export function discoverFiles(path: string): Promise<DiscoverResponse> {
+  return apiFetch(`/discover?path=${encodeURIComponent(path)}`);
 }
 
 export function listCycles(): Promise<{ cycles: CycleSummary[] }> {

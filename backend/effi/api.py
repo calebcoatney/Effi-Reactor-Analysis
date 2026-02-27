@@ -11,6 +11,7 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .cycle_detection import detect_cycles
@@ -52,6 +53,44 @@ def _require_loaded():
 
 
 # ---------------------------------------------------------------------------
+# GET /browse  –  directory browser
+# ---------------------------------------------------------------------------
+
+
+@app.get("/browse")
+def browse_directory(path: str = "."):
+    """List contents of a directory for the file browser."""
+    p = Path(path).resolve()
+    if not p.is_dir():
+        raise HTTPException(status_code=400, detail=f"Not a directory: {path}")
+    dirs = sorted(d.name for d in p.iterdir() if d.is_dir() and not d.name.startswith("."))
+    files = sorted(f.name for f in p.iterdir() if f.is_file() and not f.name.startswith("."))
+    return {"path": str(p), "parent": str(p.parent) if p.parent != p else None, "dirs": dirs, "files": files}
+
+
+# ---------------------------------------------------------------------------
+# GET /discover  –  auto-discover experiment files in a directory
+# ---------------------------------------------------------------------------
+
+
+@app.get("/discover")
+def discover_files(path: str):
+    """Find reactor, IR, and oxygen files in a directory."""
+    p = Path(path).resolve()
+    if not p.is_dir():
+        raise HTTPException(status_code=400, detail=f"Not a directory: {path}")
+    reactor_files = sorted(str(f) for f in p.glob("ExportData_*.txt"))
+    ir_files = sorted(str(f) for f in p.glob("*_Data_All.csv"))
+    oxygen_files = sorted(str(f) for f in p.glob("*_oxygen.csv"))
+    return {
+        "path": str(p),
+        "reactor_files": reactor_files,
+        "ir_file": ir_files[0] if ir_files else None,
+        "oxygen_file": oxygen_files[0] if oxygen_files else None,
+    }
+
+
+# ---------------------------------------------------------------------------
 # POST /experiment/load
 # ---------------------------------------------------------------------------
 
@@ -60,7 +99,7 @@ class LoadRequest(BaseModel):
     reactor_files: list[str]
     ir_file: str
     oxygen_file: str | None = None
-    offset_hours: float = 5.0
+    offset_hours: float = 0.0
 
 
 @app.post("/experiment/load")
@@ -200,14 +239,13 @@ def get_overview(max_points: int = 2000):
     step = max(1, len(df) // max_points)
     sampled = df.iloc[::step]
 
-    # Key columns for the overview
+    # All species (%) + reactant + condition columns for full legend support
     overview_cols = ["Timestamp"]
-    for col in ["Reactor P RSP", "Reactor P PV", "Reactor T RSP", "Reactor T PV",
-                 "3#HighPH2 RSP", "3#HighPH2 PV"]:
+    overview_cols.extend(c for c in sampled.columns if c.endswith(" (%)"))
+    for col in ["3#HighPH2 PV", "3#HighPH2 RSP"]:
         if col in sampled.columns:
             overview_cols.append(col)
-    # Add a few key species
-    for col in ["Methanol (%)", "Carbon Dioxide (%)", "Dimethyl Ether (%)", "Water (%)"]:
+    for col in ["Reactor T PV", "Reactor T RSP", "Reactor P PV", "Reactor P RSP"]:
         if col in sampled.columns:
             overview_cols.append(col)
 
@@ -230,3 +268,26 @@ def get_overview(max_points: int = 2000):
         "data": subset.values.tolist(),
         "cycles": cycle_markers,
     }
+
+
+# ---------------------------------------------------------------------------
+# Static file serving for the production frontend build
+# ---------------------------------------------------------------------------
+
+_frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+if _frontend_dist.is_dir():
+    from fastapi.responses import FileResponse
+
+    @app.get("/app/{rest_of_path:path}")
+    def serve_spa(rest_of_path: str):
+        """Serve the SPA; fall back to index.html for client-side routing."""
+        file = _frontend_dist / rest_of_path
+        if file.is_file():
+            return FileResponse(file)
+        return FileResponse(_frontend_dist / "index.html")
+
+    @app.get("/app")
+    def serve_spa_root():
+        return FileResponse(_frontend_dist / "index.html")
+
+    app.mount("/assets", StaticFiles(directory=str(_frontend_dist / "assets")), name="assets")

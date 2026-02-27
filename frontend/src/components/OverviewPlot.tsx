@@ -2,6 +2,13 @@ import { useEffect, useState } from "react";
 import Plot from "react-plotly.js";
 import type { OverviewResponse } from "../api";
 import { getOverview } from "../api";
+import {
+  headerTrace,
+  buildSpeciesTraces,
+  buildReactantTraces,
+  buildConditionTraces,
+  multiAxisLayout,
+} from "../plotConfig";
 
 interface Props {
   onCycleClick: (cycleId: number) => void;
@@ -17,50 +24,19 @@ export default function OverviewPlot({ onCycleClick }: Props) {
   if (!data) return <p>Loading overview…</p>;
 
   const timestamps = data.data.map((row) => row[0] as string);
-  const colIdx = (name: string) => data.columns.indexOf(name);
+  const colData = { columns: data.columns, data: data.data };
+  const ts0 = timestamps[0];
 
   const traces: Plotly.Data[] = [];
 
-  // Reactor conditions
-  for (const col of [
-    "Reactor T PV",
-    "Reactor T RSP",
-    "Reactor P PV",
-    "Reactor P RSP",
-    "3#HighPH2 PV",
-    "3#HighPH2 RSP",
-  ]) {
-    const idx = colIdx(col);
-    if (idx < 0) continue;
-    traces.push({
-      x: timestamps,
-      y: data.data.map((row) => row[idx] as number),
-      name: col,
-      mode: "lines",
-      line: { dash: col.includes("RSP") ? "dash" : "solid" },
-      yaxis: col.startsWith("Reactor T") ? "y2" : undefined,
-      visible: col.includes("RSP") ? "legendonly" : true,
-    });
-  }
+  traces.push(headerTrace("Species", ts0));
+  traces.push(...buildSpeciesTraces(colData, timestamps));
 
-  // Key species
-  for (const col of [
-    "Methanol (%)",
-    "Dimethyl Ether (%)",
-    "Carbon Dioxide (%)",
-    "Water (%)",
-  ]) {
-    const idx = colIdx(col);
-    if (idx < 0) continue;
-    traces.push({
-      x: timestamps,
-      y: data.data.map((row) => row[idx] as number),
-      name: col,
-      mode: "lines",
-      yaxis: "y3",
-      visible: "legendonly",
-    });
-  }
+  traces.push(headerTrace("Reactants", ts0));
+  traces.push(...buildReactantTraces(colData, timestamps));
+
+  traces.push(headerTrace("Reactor Conditions", ts0));
+  traces.push(...buildConditionTraces(colData, timestamps));
 
   // Cycle marker shapes
   const shapes: Partial<Plotly.Shape>[] = data.cycles.map((c) => ({
@@ -75,7 +51,7 @@ export default function OverviewPlot({ onCycleClick }: Props) {
     line: { width: 0 },
   }));
 
-  // Cycle label annotations
+  // Cycle label annotations (every 3rd)
   const annotations: Partial<Plotly.Annotations>[] = data.cycles
     .filter((_, i) => i % 3 === 0)
     .map((c) => ({
@@ -89,39 +65,27 @@ export default function OverviewPlot({ onCycleClick }: Props) {
       yanchor: "bottom",
     }));
 
+  const { axes } = multiAxisLayout();
+
   return (
     <div>
       <h3>Experiment Overview</h3>
       <Plot
         data={traces}
         layout={{
-          height: 400,
+          height: 450,
           margin: { t: 30, b: 50, l: 60, r: 120 },
           hovermode: "x unified",
-          xaxis: { title: { text: "Time" }, domain: [0, 0.85] },
-          yaxis: { title: { text: "Pressure (bar) / Flow (sccm)" } },
-          yaxis2: {
-            title: { text: "Temperature (°C)" },
-            overlaying: "y",
-            side: "right",
-          },
-          yaxis3: {
-            title: { text: "Concentration (%)" },
-            overlaying: "y",
-            side: "right",
-            anchor: "free",
-            position: 0.92,
-          },
+          ...axes,
           shapes,
           annotations,
-          legend: { orientation: "h", y: -0.2 },
+          legend: { tracegroupgap: 0 },
         }}
         useResizeHandler
         style={{ width: "100%" }}
         onClick={(event: Plotly.PlotMouseEvent) => {
           if (!event.points.length) return;
           const clickX = new Date(event.points[0].x as string).getTime();
-          // Find nearest cycle
           let bestCycle = data.cycles[0];
           let bestDist = Infinity;
           for (const c of data.cycles) {
