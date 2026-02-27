@@ -31,6 +31,8 @@ export interface DiscoverResponse {
   reactor_files: string[];
   ir_file: string | null;
   oxygen_file: string | null;
+  all_txt: string[];
+  all_csv: string[];
 }
 
 export interface WindowInfo {

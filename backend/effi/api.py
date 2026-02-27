@@ -83,11 +83,16 @@ def discover_files(path: str):
     reactor_files = sorted(str(f) for f in p.glob("ExportData_*.txt"))
     ir_files = sorted(str(f) for f in p.glob("*_Data_All.csv"))
     oxygen_files = sorted(str(f) for f in p.glob("*_oxygen.csv"))
+    # All .txt and .csv files for manual override
+    all_txt = sorted(f.name for f in p.glob("*.txt"))
+    all_csv = sorted(f.name for f in p.glob("*.csv"))
     return {
         "path": str(p),
         "reactor_files": reactor_files,
         "ir_file": ir_files[0] if ir_files else None,
         "oxygen_file": oxygen_files[0] if oxygen_files else None,
+        "all_txt": all_txt,
+        "all_csv": all_csv,
     }
 
 

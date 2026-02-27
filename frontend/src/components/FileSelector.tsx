@@ -6,6 +6,8 @@ interface Props {
   onLoaded: (resp: LoadResponse) => void;
 }
 
+type FileRole = "reactor" | "ir" | "oxygen" | "none";
+
 // ── hh:mm:ss unit ──────────────────────────────────────────────────────────
 
 function TimeUnit({
@@ -52,11 +54,36 @@ function TimeUnit({
   );
 }
 
+// ── helpers ─────────────────────────────────────────────────────────────────
+
+/** Build initial role map from auto-discovery results. */
+function initRoles(disc: DiscoverResponse): Record<string, FileRole> {
+  const roles: Record<string, FileRole> = {};
+  const allFiles = [...disc.all_txt, ...disc.all_csv];
+  const reactorBasenames = new Set(
+    disc.reactor_files.map((p) => p.split("/").pop()!),
+  );
+  const irBasename = disc.ir_file?.split("/").pop() ?? null;
+  const oxyBasename = disc.oxygen_file?.split("/").pop() ?? null;
+
+  for (const f of allFiles) {
+    if (reactorBasenames.has(f)) roles[f] = "reactor";
+    else if (f === irBasename) roles[f] = "ir";
+    else if (f === oxyBasename) roles[f] = "oxygen";
+    else roles[f] = "none";
+  }
+  return roles;
+}
+
 // ── main component ─────────────────────────────────────────────────────────
 
 export default function FileSelector({ onLoaded }: Props) {
   const [dataDir, setDataDir] = useState<string | null>(null);
   const [discovered, setDiscovered] = useState<DiscoverResponse | null>(null);
+
+  // manual file role overrides
+  const [roles, setRoles] = useState<Record<string, FileRole>>({});
+  const [expanded, setExpanded] = useState(false);
 
   // browser state
   const [browsing, setBrowsing] = useState(false);
@@ -74,10 +101,18 @@ export default function FileSelector({ onLoaded }: Props) {
   useEffect(() => {
     if (dataDir) {
       discoverFiles(dataDir)
-        .then(setDiscovered)
-        .catch(() => setDiscovered(null));
+        .then((d) => {
+          setDiscovered(d);
+          setRoles(initRoles(d));
+          setExpanded(false);
+        })
+        .catch(() => {
+          setDiscovered(null);
+          setRoles({});
+        });
     } else {
       setDiscovered(null);
+      setRoles({});
     }
   }, [dataDir]);
 
@@ -97,15 +132,44 @@ export default function FileSelector({ onLoaded }: Props) {
     }
   }
 
+  function setRole(file: string, role: FileRole) {
+    setRoles((prev) => {
+      const next = { ...prev };
+      // ir and oxygen are single-select: clear any previous assignment
+      if (role === "ir" || role === "oxygen") {
+        for (const k of Object.keys(next)) {
+          if (next[k] === role) next[k] = "none";
+        }
+      }
+      next[file] = role;
+      return next;
+    });
+  }
+
+  // derive file lists from roles
+  const reactorFiles = discovered
+    ? Object.entries(roles)
+        .filter(([, r]) => r === "reactor")
+        .map(([f]) => `${discovered.path}/${f}`)
+    : [];
+  const irFile = discovered
+    ? Object.entries(roles).find(([, r]) => r === "ir")?.[0] ?? null
+    : null;
+  const oxygenFile = discovered
+    ? Object.entries(roles).find(([, r]) => r === "oxygen")?.[0] ?? null
+    : null;
+
   async function handleLoad() {
-    if (!discovered || !discovered.ir_file) return;
+    if (!discovered || !irFile) return;
     setLoading(true);
     setError(null);
     try {
       const req: LoadRequest = {
-        reactor_files: discovered.reactor_files,
-        ir_file: discovered.ir_file,
-        oxygen_file: discovered.oxygen_file ?? undefined,
+        reactor_files: reactorFiles,
+        ir_file: `${discovered.path}/${irFile}`,
+        oxygen_file: oxygenFile
+          ? `${discovered.path}/${oxygenFile}`
+          : undefined,
         offset_hours: hh + mm / 60 + ss / 3600,
       };
       const resp = await loadExperiment(req);
@@ -117,15 +181,22 @@ export default function FileSelector({ onLoaded }: Props) {
     }
   }
 
-  const canLoad =
-    discovered &&
-    discovered.reactor_files.length > 0 &&
-    discovered.ir_file != null;
+  const canLoad = reactorFiles.length > 0 && irFile != null;
 
   const dirEntry: React.CSSProperties = {
     padding: "4px 8px",
     cursor: "pointer",
     borderRadius: 4,
+  };
+
+  const allFiles = discovered
+    ? [...discovered.all_txt, ...discovered.all_csv]
+    : [];
+
+  const roleCounts = {
+    reactor: Object.values(roles).filter((r) => r === "reactor").length,
+    ir: Object.values(roles).filter((r) => r === "ir").length,
+    oxygen: Object.values(roles).filter((r) => r === "oxygen").length,
   };
 
   return (
@@ -227,10 +298,7 @@ export default function FileSelector({ onLoaded }: Props) {
           ))}
 
           <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
-            <button
-              onClick={selectDir}
-              style={{ fontWeight: 600 }}
-            >
+            <button onClick={selectDir} style={{ fontWeight: 600 }}>
               Select This Directory
             </button>
             <button onClick={() => setBrowsing(false)}>Cancel</button>
@@ -238,19 +306,87 @@ export default function FileSelector({ onLoaded }: Props) {
         </div>
       )}
 
-      {/* ── discovered files summary ── */}
-      {discovered && (
-        <div style={{ marginBottom: 10, fontSize: 12, color: "#555" }}>
-          Found: {discovered.reactor_files.length} reactor file
-          {discovered.reactor_files.length !== 1 ? "s" : ""}
-          {discovered.ir_file ? ", 1 IR file" : ", ⚠ no IR file"}
-          {discovered.oxygen_file ? ", 1 oxygen file" : ""}
+      {/* ── discovered files summary + expandable detail ── */}
+      {discovered && allFiles.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              cursor: "pointer",
+              fontSize: 12,
+              color: "#555",
+              userSelect: "none",
+            }}
+            onClick={() => setExpanded(!expanded)}
+          >
+            <span
+              style={{
+                display: "inline-block",
+                transition: "transform 0.15s",
+                transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+              }}
+            >
+              ▶
+            </span>
+            <span>
+              Found: {roleCounts.reactor} reactor file
+              {roleCounts.reactor !== 1 ? "s" : ""}
+              {roleCounts.ir ? ", 1 IR file" : ", ⚠ no IR file"}
+              {roleCounts.oxygen ? ", 1 oxygen file" : ""}
+              <span style={{ color: "#999", marginLeft: 6 }}>
+                ({allFiles.length} file{allFiles.length !== 1 ? "s" : ""} in
+                directory)
+              </span>
+            </span>
+          </div>
+
+          {expanded && (
+            <div
+              style={{
+                marginTop: 6,
+                padding: 10,
+                background: "#fff",
+                border: "1px solid #ccc",
+                borderRadius: 6,
+                fontSize: 12,
+                maxHeight: 260,
+                overflowY: "auto",
+              }}
+            >
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto",
+                  gap: "4px 12px",
+                  alignItems: "center",
+                }}
+              >
+                {allFiles.map((f) => (
+                  <FileRoleRow
+                    key={f}
+                    file={f}
+                    role={roles[f] ?? "none"}
+                    onChange={(r) => setRole(f, r)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* ── offset hh:mm:ss ── */}
       <div style={{ marginBottom: 12 }}>
-        <label style={{ fontWeight: 500, fontSize: 13, display: "block", marginBottom: 4 }}>
+        <label
+          style={{
+            fontWeight: 500,
+            fontSize: 13,
+            display: "block",
+            marginBottom: 4,
+          }}
+        >
           Time Offset
         </label>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -269,7 +405,65 @@ export default function FileSelector({ onLoaded }: Props) {
       >
         {loading ? "Loading…" : "Load Experiment"}
       </button>
-      {error && <p style={{ color: "red", margin: "8px 0 0", fontSize: 13 }}>{error}</p>}
+      {error && (
+        <p style={{ color: "red", margin: "8px 0 0", fontSize: 13 }}>
+          {error}
+        </p>
+      )}
     </div>
+  );
+}
+
+// ── file role selector row ─────────────────────────────────────────────────
+
+const ROLE_OPTIONS: { value: FileRole; label: string; color: string }[] = [
+  { value: "reactor", label: "Reactor", color: "#2563eb" },
+  { value: "ir", label: "IR", color: "#059669" },
+  { value: "oxygen", label: "O₂", color: "#d97706" },
+  { value: "none", label: "—", color: "#999" },
+];
+
+function FileRoleRow({
+  file,
+  role,
+  onChange,
+}: {
+  file: string;
+  role: FileRole;
+  onChange: (r: FileRole) => void;
+}) {
+  return (
+    <>
+      <span
+        style={{
+          fontFamily: "monospace",
+          fontSize: 12,
+          color: role === "none" ? "#999" : "#333",
+        }}
+      >
+        {file}
+      </span>
+      <div style={{ display: "flex", gap: 2 }}>
+        {ROLE_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => onChange(opt.value)}
+            style={{
+              padding: "2px 6px",
+              fontSize: 11,
+              border: "1px solid",
+              borderColor: role === opt.value ? opt.color : "#ccc",
+              borderRadius: 3,
+              background: role === opt.value ? opt.color : "#fff",
+              color: role === opt.value ? "#fff" : "#666",
+              cursor: "pointer",
+              fontWeight: role === opt.value ? 600 : 400,
+            }}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </>
   );
 }
