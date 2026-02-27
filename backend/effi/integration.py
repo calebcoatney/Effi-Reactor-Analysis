@@ -7,9 +7,9 @@ import pandas as pd
 
 from .models import Cycle, Window
 
-# The 15 native IR species columns (9 in %, 6 in ppm).
-# Auto-generated (%) versions of ppm species are excluded to avoid
-# double-counting.
+# The 15 native IR species, all integrated in (%) units.
+# For the 6 ppm-native species, data_loading auto-generates (%) columns
+# by dividing by 10,000.
 NATIVE_SPECIES = [
     "Acetaldehyde (%)",
     "Ethylene (%)",
@@ -20,12 +20,12 @@ NATIVE_SPECIES = [
     "Water (%)",
     "Methanol (%)",
     "Sulfur Dioxide (%)",
-    "Ethanol (ppm)",
-    "Formaldehyde (ppm)",
-    "Ammonia (ppm)",
-    "Nitric Oxide (ppm)",
-    "Nitrogen Dioxide (ppm)",
-    "Nitrous Oxide (ppm)",
+    "Ethanol (%)",
+    "Formaldehyde (%)",
+    "Ammonia (%)",
+    "Nitric Oxide (%)",
+    "Nitrogen Dioxide (%)",
+    "Nitrous Oxide (%)",
 ]
 
 
@@ -50,8 +50,7 @@ def integrate_species(
 
     Returns
     -------
-    dict mapping species column name to integrated area.
-    Units are ``% * s`` or ``ppm * s`` depending on the column.
+    dict mapping species column name to integrated area (units: ``%·s``).
     """
     if species_cols is None:
         species_cols = [c for c in NATIVE_SPECIES if c in df.columns]
@@ -86,17 +85,12 @@ def analyze_experiment(
         lp = integrate_species(df, cycle.low_p, species_cols)
 
         for col in species_cols:
-            if col.endswith(" (%)"):
-                unit = "%·s"
-                species_name = col.removesuffix(" (%)")
-            else:
-                unit = "ppm·s"
-                species_name = col.removesuffix(" (ppm)")
+            species_name = col.removesuffix(" (%)")
 
             rows.append({
                 "cycle_id": cycle.cycle_id,
                 "species": species_name,
-                "unit": unit,
+                "unit": "%·s",
                 "high_p_area": hp[col],
                 "low_p_area": lp[col],
             })
