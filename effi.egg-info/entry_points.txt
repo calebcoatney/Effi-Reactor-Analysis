@@ -1,0 +1,2 @@
+[console_scripts]
+effi-analysis = backend.effi.cli:main
