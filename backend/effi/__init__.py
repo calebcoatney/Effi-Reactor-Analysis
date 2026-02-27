@@ -11,3 +11,4 @@ from .data_loading import (
 from .models import Window, Cycle
 from .cycle_detection import detect_cycles
 from .integration import integrate_species, analyze_experiment
+from .plotting import plot_cycle, plot_merged, plot_species
