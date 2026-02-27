@@ -7,6 +7,9 @@ dependencies = [
     "numpy",
     "pandas",
     "plotly",
+    "fastapi",
+    "uvicorn[standard]",
+    "orjson",
 ]
 
 [project.optional-dependencies]
