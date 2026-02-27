@@ -1,9 +1,0 @@
-numpy
-pandas
-plotly
-fastapi
-uvicorn[standard]
-orjson
-
-[dev]
-jupyter

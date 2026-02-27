@@ -10,3 +10,4 @@ ExportData*.txt
 .claude/
 node_modules/
 dist/
+*.egg-info/
