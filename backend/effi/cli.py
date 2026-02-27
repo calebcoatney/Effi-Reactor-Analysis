@@ -19,10 +19,13 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--no-browser", action="store_true", help="Don't open a browser window")
     args = parser.parse_args(argv)
 
-    # Ensure the production build exists
-    dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+    # Look for bundled static files first, then fall back to dev build
+    pkg_static = Path(__file__).resolve().parent / "_static"
+    dev_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+    dist = pkg_static if pkg_static.is_dir() else dev_dist
+
     if not dist.is_dir():
-        print(f"⚠  Frontend build not found at {dist}")
+        print("⚠  Frontend build not found.")
         print("   Run: cd frontend && npm run build")
         sys.exit(1)
 

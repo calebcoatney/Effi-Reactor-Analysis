@@ -11,43 +11,28 @@ function App() {
   const [selectedCycle, setSelectedCycle] = useState(1);
 
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: 16, fontFamily: "system-ui, sans-serif" }}>
-      <h1 style={{ marginBottom: 4 }}>Effi Reactor Cycle Analysis</h1>
-      <p style={{ color: "#666", marginTop: 0 }}>
-        {loadResult
-          ? `${loadResult.rows.toLocaleString()} rows · ${loadResult.n_cycles} cycles · ${loadResult.time_range.start.slice(0, 10)} to ${loadResult.time_range.end.slice(0, 10)}`
-          : "Load an experiment to begin."}
-      </p>
+    <div className="app-container">
+      <header className="app-header">
+        <h1>Effi Reactor Cycle Analysis</h1>
+        <p className="app-subtitle">
+          {loadResult
+            ? `${loadResult.rows.toLocaleString()} rows · ${loadResult.n_cycles} cycles · ${loadResult.time_range.start.slice(0, 10)} to ${loadResult.time_range.end.slice(0, 10)}`
+            : "Load an experiment to begin."}
+        </p>
+      </header>
 
       <FileSelector onLoaded={(resp) => { setLoadResult(resp); setSelectedCycle(1); }} />
 
       {loadResult && (
         <>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-            <button
-              onClick={downloadExcel}
-              style={{
-                padding: "6px 14px",
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: "pointer",
-                borderRadius: 4,
-                border: "1px solid #059669",
-                background: "#059669",
-                color: "#fff",
-              }}
-            >
-              📥 Export Integration Results (.xlsx)
-            </button>
-          </div>
           <OverviewPlot onCycleClick={setSelectedCycle} />
-          <hr />
+          <div className="section-divider" />
           <CycleNavigator
             cycleId={selectedCycle}
             totalCycles={loadResult.n_cycles}
             onChange={setSelectedCycle}
           />
-          <CycleDetailView cycleId={selectedCycle} />
+          <CycleDetailView cycleId={selectedCycle} onExport={downloadExcel} />
         </>
       )}
     </div>

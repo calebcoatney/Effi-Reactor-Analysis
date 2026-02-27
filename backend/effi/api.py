@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import ORJSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -34,11 +33,19 @@ class AppState:
 
 state = AppState()
 
+
+def _sanitize(data: list[list]) -> list[list]:
+    """Replace NaN/Inf with None for JSON serialization."""
+    return [
+        [None if isinstance(v, float) and (math.isnan(v) or math.isinf(v)) else v for v in row]
+        for row in data
+    ]
+
 # ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="Effi Reactor Analysis", version="0.1.0", default_response_class=ORJSONResponse)
+app = FastAPI(title="Effi Reactor Analysis", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -188,6 +195,10 @@ def get_cycle(cycle_id: int):
     # Integration results for this cycle
     cycle_results = state.results[state.results["cycle_id"] == cycle_id]
     integration = cycle_results[["species", "unit", "high_p_area", "low_p_area"]].to_dict(orient="records")
+    for row in integration:
+        for k, v in row.items():
+            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                row[k] = None
 
     return {
         **_cycle_summary(cycle),
@@ -240,7 +251,7 @@ def get_cycle_data(cycle_id: int, pad_minutes: float = 2.0):
     return {
         "cycle_id": cycle_id,
         "columns": cols_to_send,
-        "data": subset.values.tolist(),
+        "data": _sanitize(subset.values.tolist()),
     }
 
 
@@ -287,7 +298,7 @@ def get_overview(max_points: int = 2000):
 
     return {
         "columns": overview_cols,
-        "data": subset.values.tolist(),
+        "data": _sanitize(subset.values.tolist()),
         "cycles": cycle_markers,
     }
 
@@ -332,7 +343,9 @@ def export_excel():
 # Static file serving for the production frontend build
 # ---------------------------------------------------------------------------
 
-_frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+_pkg_static = Path(__file__).resolve().parent / "_static"
+_dev_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+_frontend_dist = _pkg_static if _pkg_static.is_dir() else _dev_dist
 if _frontend_dist.is_dir():
     from fastapi.responses import FileResponse
 

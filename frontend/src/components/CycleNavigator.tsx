@@ -10,21 +10,15 @@ export default function CycleNavigator({
   onChange,
 }: Props) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        margin: "12px 0",
-      }}
-    >
+    <div className="cycle-nav">
       <button
+        className="btn"
         onClick={() => onChange(cycleId - 1)}
         disabled={cycleId <= 1}
       >
         ◀ Prev
       </button>
-      <span>
+      <span className="cycle-nav-label">
         Cycle{" "}
         <select
           value={cycleId}
@@ -39,6 +33,7 @@ export default function CycleNavigator({
         / {totalCycles}
       </span>
       <button
+        className="btn"
         onClick={() => onChange(cycleId + 1)}
         disabled={cycleId >= totalCycles}
       >

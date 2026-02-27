@@ -15,13 +15,16 @@ import {
 
 interface Props {
   cycleId: number;
+  onExport?: () => void;
 }
 
-export default function CycleDetailView({ cycleId }: Props) {
+export default function CycleDetailView({ cycleId, onExport }: Props) {
   const [detail, setDetail] = useState<CycleDetail | null>(null);
   const [tsData, setTsData] = useState<CycleDataResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [highlighted, setHighlighted] = useState<string | null>(null);
+  const [highlighted, setHighlighted] = useState<Set<string>>(
+    () => new Set(DEFAULT_VISIBLE.species)
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -56,8 +59,7 @@ export default function CycleDetailView({ cycleId }: Props) {
     const label = col.replace(/ \(%\)$/, "");
     const color = COLORS[i % COLORS.length];
     const [r, g, b] = parseColor(color);
-    const isVis =
-      DEFAULT_VISIBLE.species.has(label) || highlighted === label;
+    const isVis = highlighted.has(label);
 
     // main line
     traces.push({
@@ -164,83 +166,77 @@ export default function CycleDetailView({ cycleId }: Props) {
 
   return (
     <div style={{ minHeight: 700, position: "relative" }}>
-      {loading && (
-        <div
-          style={{
-            position: "absolute",
-            top: 8,
-            right: 8,
-            fontSize: 12,
-            color: "#888",
-          }}
-        >
-          Updating…
-        </div>
-      )}
-      <h3>Cycle {cycleId} Detail</h3>
-      <Plot
-        data={traces}
-        layout={{
-          height: 550,
-          margin: { t: 30, b: 50, l: 60, r: 120 },
-          hovermode: "x unified",
-          ...axes,
-          shapes,
-          annotations,
-          legend: { tracegroupgap: 0 },
-        }}
-        useResizeHandler
-        style={{ width: "100%" }}
-      />
+      {loading && <div className="loading-badge">Updating…</div>}
 
-      <h4>Integration Results</h4>
-      <table
-        style={{
-          borderCollapse: "collapse",
-          width: "100%",
-          fontSize: 13,
-        }}
-      >
-        <thead>
-          <tr style={{ borderBottom: "2px solid #333" }}>
-            <th style={{ textAlign: "left", padding: 4 }}>Species</th>
-            <th style={{ textAlign: "left", padding: 4 }}>Unit</th>
-            <th style={{ textAlign: "right", padding: 4 }}>High-P Area</th>
-            <th style={{ textAlign: "right", padding: 4 }}>Low-P Area</th>
-            <th style={{ textAlign: "right", padding: 4 }}>Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {detail.integration.map((row) => (
-            <tr
-              key={row.species}
-              onClick={() =>
-                setHighlighted(
-                  highlighted === row.species ? null : row.species
-                )
-              }
-              style={{
-                cursor: "pointer",
-                borderBottom: "1px solid #ddd",
-                background:
-                  highlighted === row.species ? "#e8f0fe" : undefined,
-              }}
-            >
-              <td style={{ padding: 4 }}>{row.species}</td>
-              <td style={{ padding: 4 }}>{row.unit}</td>
-              <td style={{ textAlign: "right", padding: 4 }}>
-                {row.high_p_area.toFixed(2)}
-              </td>
-              <td style={{ textAlign: "right", padding: 4 }}>
-                {row.low_p_area.toFixed(2)}
-              </td>
-              <td style={{ textAlign: "right", padding: 4, fontWeight: 600 }}>
-                {(row.high_p_area + row.low_p_area).toFixed(2)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="plot-section">
+        <h3>Cycle {cycleId} Detail</h3>
+        <Plot
+          data={traces}
+          layout={{
+            height: 550,
+            margin: { t: 30, b: 50, l: 60, r: 120 },
+            hovermode: "x unified",
+            ...axes,
+            shapes,
+            annotations,
+            legend: { tracegroupgap: 0 },
+            paper_bgcolor: "transparent",
+            plot_bgcolor: "transparent",
+            font: { family: "Inter, system-ui, sans-serif" },
+          }}
+          useResizeHandler
+          style={{ width: "100%" }}
+        />
+      </div>
+
+      <div className="card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <h4 style={{ margin: 0 }}>Integration Results</h4>
+          {onExport && (
+            <button className="btn btn-success btn-sm" onClick={onExport}>
+              Export Results (.xlsx)
+            </button>
+          )}
+        </div>
+        <div className="data-table-wrapper">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="text-left">Species</th>
+                <th className="text-left">Unit</th>
+                <th className="text-right">High-P Area</th>
+                <th className="text-right">Low-P Area</th>
+                <th className="text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.integration.map((row) => (
+                <tr
+                  key={row.species}
+                  onClick={() =>
+                    setHighlighted((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(row.species)) next.delete(row.species);
+                      else next.add(row.species);
+                      return next;
+                    })
+                  }
+                  className={highlighted.has(row.species) ? "row-highlighted" : ""}
+                  style={{ cursor: "pointer" }}
+                >
+                  <td>{row.species}</td>
+                  <td>{row.unit}</td>
+                  <td className="text-right">{row.high_p_area.toFixed(2)}</td>
+                  <td className="text-right">{row.low_p_area.toFixed(2)}</td>
+                  <td className="text-right font-semibold">
+                    {(row.high_p_area + row.low_p_area).toFixed(2)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

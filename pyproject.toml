@@ -9,7 +9,7 @@ dependencies = [
     "plotly",
     "fastapi",
     "uvicorn[standard]",
-    "orjson",
+    "openpyxl",
 ]
 
 [project.optional-dependencies]
@@ -20,3 +20,6 @@ effi-analysis = "backend.effi.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["backend*"]
+
+[tool.setuptools.package-data]
+"backend.effi" = ["_static/**/*"]

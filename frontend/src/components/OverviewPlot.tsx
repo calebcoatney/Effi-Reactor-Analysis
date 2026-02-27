@@ -68,7 +68,7 @@ export default function OverviewPlot({ onCycleClick }: Props) {
   const { axes } = multiAxisLayout();
 
   return (
-    <div>
+    <div className="plot-section">
       <h3>Experiment Overview</h3>
       <Plot
         data={traces}
@@ -80,6 +80,9 @@ export default function OverviewPlot({ onCycleClick }: Props) {
           shapes,
           annotations,
           legend: { tracegroupgap: 0 },
+          paper_bgcolor: "transparent",
+          plot_bgcolor: "transparent",
+          font: { family: "Inter, system-ui, sans-serif" },
         }}
         useResizeHandler
         style={{ width: "100%" }}
@@ -102,7 +105,7 @@ export default function OverviewPlot({ onCycleClick }: Props) {
           onCycleClick(bestCycle.cycle_id);
         }}
       />
-      <p style={{ fontSize: 12, color: "#888" }}>
+      <p className="plot-hint">
         Click on the plot near a cycle to view its detail.
       </p>
     </div>
