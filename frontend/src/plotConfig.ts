@@ -44,7 +44,17 @@ export function speciesCols(d: ColumnarData): string[] {
 }
 
 export function reactantCols(d: ColumnarData): string[] {
-  return d.columns.filter((c) => c.startsWith("3#HighPH2"));
+  // Auto-discover reactant PV/RSP pairs via TOT columns (same as plot_merged)
+  const colSet = new Set(d.columns);
+  const bases = d.columns
+    .filter((c) => c.endsWith(" TOT"))
+    .map((c) => c.replace(/ TOT$/, ""))
+    .filter((b) => colSet.has(`${b} PV`) && colSet.has(`${b} RSP`));
+  const out: string[] = [];
+  for (const b of bases) {
+    out.push(`${b} PV`, `${b} RSP`);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

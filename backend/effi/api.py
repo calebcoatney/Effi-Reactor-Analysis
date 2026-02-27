@@ -29,6 +29,7 @@ class AppState:
     df: pd.DataFrame | None = None
     cycles: list[Cycle] = field(default_factory=list)
     results: pd.DataFrame | None = None
+    reactant_bases: list[str] = field(default_factory=list)  # e.g. ["3#HighPH2", "4#CO2", ...]
 
 
 state = AppState()
@@ -118,6 +119,14 @@ def load_experiment_endpoint(req: LoadRequest):
     state.cycles = detect_cycles(state.df)
     state.results = analyze_experiment(state.df, state.cycles)
 
+    # Auto-discover reactant base names (same logic as plot_merged)
+    cols = state.df.columns
+    tot_bases = [c.replace(" TOT", "") for c in cols if c.endswith(" TOT")]
+    state.reactant_bases = sorted(
+        [b for b in tot_bases if f"{b} PV" in cols and f"{b} RSP" in cols],
+        key=lambda b: list(cols).index(f"{b} PV"),
+    )
+
     return {
         "rows": state.df.shape[0],
         "columns": state.df.shape[1],
@@ -206,11 +215,17 @@ def get_cycle_data(cycle_id: int, pad_minutes: float = 2.0):
     pct_cols = [c for c in view.columns if c.endswith(" (%)")]
     all_species = list(dict.fromkeys(species_cols + pct_cols))  # dedupe, preserve order
 
+    # Reactant columns (auto-discovered PV/RSP/TOT triples)
+    condition_cols = []
+    for base in state.reactant_bases:
+        for suffix in ("PV", "RSP", "TOT"):
+            col = f"{base} {suffix}"
+            if col in view.columns:
+                condition_cols.append(col)
     # Reactor condition columns
-    condition_cols = [c for c in view.columns if c in (
-        "Reactor P RSP", "Reactor P PV", "Reactor T RSP", "Reactor T PV",
-        "3#HighPH2 RSP", "3#HighPH2 PV",
-    )]
+    for col in ("Reactor P RSP", "Reactor P PV", "Reactor T RSP", "Reactor T PV"):
+        if col in view.columns:
+            condition_cols.append(col)
 
     cols_to_send = ["Timestamp"] + all_species + condition_cols
     cols_to_send = [c for c in cols_to_send if c in view.columns]
@@ -242,9 +257,11 @@ def get_overview(max_points: int = 2000):
     # All species (%) + reactant + condition columns for full legend support
     overview_cols = ["Timestamp"]
     overview_cols.extend(c for c in sampled.columns if c.endswith(" (%)"))
-    for col in ["3#HighPH2 PV", "3#HighPH2 RSP"]:
-        if col in sampled.columns:
-            overview_cols.append(col)
+    for base in state.reactant_bases:
+        for suffix in ("PV", "RSP", "TOT"):
+            col = f"{base} {suffix}"
+            if col in sampled.columns:
+                overview_cols.append(col)
     for col in ["Reactor T PV", "Reactor T RSP", "Reactor P PV", "Reactor P RSP"]:
         if col in sampled.columns:
             overview_cols.append(col)
