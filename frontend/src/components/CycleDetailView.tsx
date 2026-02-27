@@ -41,18 +41,15 @@ export default function CycleDetailView({ cycleId }: Props) {
     const idx = colIdx(col);
     const label = col.replace(/ \(%\)$/, "").replace(/ \(ppm\)$/, "");
     const isHighlighted = highlighted === label;
+    const isDefaultVisible =
+      col === "Methanol (%)" || isHighlighted;
     traces.push({
       x: timestamps,
       y: tsData.data.map((row) => row[idx] as number),
       name: col,
       mode: "lines",
       visible:
-        isHighlighted ||
-        [
-          "Methanol (%)",
-          "Dimethyl Ether (%)",
-          "Carbon Dioxide (%)",
-        ].includes(col)
+        isDefaultVisible
           ? true
           : "legendonly",
       line: isHighlighted ? { width: 3 } : undefined,
@@ -68,7 +65,7 @@ export default function CycleDetailView({ cycleId }: Props) {
       mode: "lines",
       line: { dash: col.includes("RSP") ? "dash" : "solid" },
       yaxis: "y2",
-      visible: col.includes("RSP") ? true : "legendonly",
+      visible: col === "3#HighPH2 PV" ? true : "legendonly",
     });
   }
 

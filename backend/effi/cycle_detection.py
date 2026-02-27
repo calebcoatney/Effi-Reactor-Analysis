@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from .models import Cycle, Window
@@ -29,15 +30,18 @@ def detect_cycles(
     ---------
     1. Find H2 ON/OFF transitions from ``h2_rsp_col``: ON when value crosses
        above ``h2_rsp_on``, OFF when it crosses below ``h2_rsp_off``.
-       Each ON→OFF pair = one cycle.
+       Each ON→OFF pair = one candidate cycle.
 
-    2. High-pressure window for each cycle:
+    2. Skip pretreatment: reject any ON→OFF pair where ``t_rsp_col`` never
+       exceeds ``t_rsp_high`` (temperature never ramps to reaction conditions).
+
+    3. High-pressure window for each cycle:
        - Start: first row where ``h2_pv_col > h2_pv_on`` (H2 actually flowing).
-       - End: first row where ``p_rsp_col < p_rsp_low`` after it was
-         ``> p_rsp_high`` (pressure setpoint commanded down).
+       - End: first row where ``p_rsp_col`` begins to decrease from its high
+         plateau (first value below the plateau maximum minus a small margin).
 
-    3. Low-pressure window for each cycle:
-       - Start: same as high-P window end.
+    4. Low-pressure window for each cycle:
+       - Start: same as high-P window end (captures the ramp-down).
        - End: first row where ``t_rsp_col < t_rsp_low`` after it was
          ``> t_rsp_high`` (temperature setpoint drops back to baseline).
 
@@ -81,41 +85,50 @@ def detect_cycles(
             is_on = False
 
     # If H2 was still on at end, drop the unpaired ON
-    n_cycles = min(len(on_indices), len(off_indices))
+    n_pairs = min(len(on_indices), len(off_indices))
 
     cycles = []
-    for c in range(n_cycles):
+    cycle_num = 0
+    for c in range(n_pairs):
         cycle_start = on_indices[c]
         cycle_end = off_indices[c]
 
-        # Step 2: High-P window
+        # Step 2: skip pretreatment — T RSP must exceed t_rsp_high at least
+        # once during this H2-on period
+        t_slice = t_rsp[cycle_start : cycle_end + 1]
+        if not np.any(t_slice > t_rsp_high):
+            continue
+
+        # Step 3: High-P window
         hp_start = _first_where_above(h2_pv, h2_pv_on, cycle_start, cycle_end)
         if hp_start is None:
             continue  # skip malformed cycle
 
-        # End of high-P: first row where P RSP drops below p_rsp_low
-        # after having been above p_rsp_high
-        hp_end = _first_drop_below(p_rsp, p_rsp_high, p_rsp_low, hp_start, cycle_end)
+        # End of high-P: first row where P RSP starts dropping from its
+        # plateau.  We detect this as the first decrease from the stable
+        # high value (first value < plateau_max - small margin).
+        hp_end = _first_ramp_down(p_rsp, p_rsp_high, hp_start, cycle_end)
         if hp_end is None:
-            # Pressure never came up or never dropped — use cycle_end
             hp_end = cycle_end
 
-        # Step 3: Low-P window
+        # Step 4: Low-P window — starts immediately when pressure begins
+        # ramping down (same point as hp_end)
         lp_start = hp_end
 
         # End of low-P: first row where T RSP drops below t_rsp_low
         # after having been above t_rsp_high, searching past cycle_end
         # (temperature ramp-down can extend beyond H2 off)
         search_end = min(
-            off_indices[c + 1] if c + 1 < n_cycles else len(df) - 1,
+            off_indices[c + 1] if c + 1 < n_pairs else len(df) - 1,
             len(df) - 1,
         )
         lp_end = _first_drop_below(t_rsp, t_rsp_high, t_rsp_low, lp_start, search_end)
         if lp_end is None:
             lp_end = cycle_end
 
+        cycle_num += 1
         cycles.append(Cycle(
-            cycle_id=c + 1,
+            cycle_id=cycle_num,
             high_p=Window(
                 label="high_p",
                 start=timestamps.iloc[hp_start],
@@ -139,6 +152,28 @@ def _first_where_above(arr, threshold: float, start: int, end: int) -> int | Non
     """Return first index in [start, end] where arr[i] > threshold."""
     for i in range(start, end + 1):
         if arr[i] > threshold:
+            return i
+    return None
+
+
+def _first_ramp_down(
+    arr, high_threshold: float, start: int, end: int
+) -> int | None:
+    """Return first index where arr begins to decrease from a high plateau.
+
+    Finds the stable plateau value (first sustained value > high_threshold),
+    then returns the first index where the value drops below that plateau
+    by more than a small margin (2 units).
+    """
+    plateau_val = None
+    for i in range(start, end + 1):
+        if arr[i] > high_threshold:
+            if plateau_val is None:
+                plateau_val = arr[i]
+            else:
+                # Track the plateau (take max in case it ramps up)
+                plateau_val = max(plateau_val, arr[i])
+        if plateau_val is not None and arr[i] < plateau_val - 2.0:
             return i
     return None
 
