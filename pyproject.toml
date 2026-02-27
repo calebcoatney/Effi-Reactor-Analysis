@@ -1,0 +1,13 @@
+[project]
+name = "effi"
+version = "0.1.0"
+description = "Effi reactor cycle analysis tools"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "pandas",
+    "plotly",
+]
+
+[project.optional-dependencies]
+dev = ["jupyter"]

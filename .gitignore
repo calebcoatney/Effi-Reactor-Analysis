@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+*.xlsx
+ExportData*.txt
+260121_*.csv
+.ipynb_checkpoints/
+~$*
+260121_CZA-flueCO2/
+.claude/
