@@ -54,7 +54,8 @@ def load_ir_data(filepath="260121_Data_All.csv") -> pd.DataFrame:
     to datetime.
     """
     df = pd.read_csv(filepath, low_memory=False)
-    df.iloc[:, 53] = df.iloc[:, 53].fillna("").astype(str)
+    if "Batch Number" in df.columns:
+        df["Batch Number"] = df["Batch Number"].fillna("").astype(str)
     df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce")
 
     # Add a (%) column right after each (ppm) column for use in plot_species.
