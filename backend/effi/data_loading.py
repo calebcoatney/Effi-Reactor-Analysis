@@ -188,8 +188,11 @@ def merge_oxygen_into_ir(
         tolerance=pd.Timedelta(tolerance),
     )
     cols = merged.columns.tolist()
-    batch_idx = cols.index("Batch Number")
-    cols.insert(batch_idx, cols.pop(cols.index("Oxygen (%)")))
+    oxy_col = cols.pop(cols.index("Oxygen (%)"))
+    if "Batch Number" in cols:
+        cols.insert(cols.index("Batch Number"), oxy_col)
+    else:
+        cols.append(oxy_col)
     return merged[cols]
 
 
