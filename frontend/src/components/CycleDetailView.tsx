@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import Plot from "react-plotly.js";
-import type { CycleDataResponse, CycleDetail } from "../api";
+import type { CycleDataResponse, CycleDetail, WindowInfo } from "../api";
 import { getCycle, getCycleData } from "../api";
 import {
   COLORS,
@@ -46,6 +46,20 @@ export default function CycleDetailView({ cycleId, onExport, catalystType }: Pro
 
   if (!detail || !tsData) return <p>Loading cycle {cycleId}…</p>;
 
+  // Build stepWindows array dynamically from detail object
+  type StepWindow = { key: string; label: string; color: string; fillAlpha: number; info: WindowInfo };
+  const stepWindows: StepWindow[] = [];
+  if (detail.capture)
+    stepWindows.push({ key: "capture", label: "Capture", color: "#10b981", fillAlpha: 0.2, info: detail.capture });
+  if (detail.purge)
+    stepWindows.push({ key: "purge", label: "Purge", color: "#8b5cf6", fillAlpha: 0.15, info: detail.purge });
+  if (detail.high_p_hydrogenation)
+    stepWindows.push({ key: "high_p_hydrogenation", label: "High P Hydro", color: "#0064ff", fillAlpha: 0.3, info: detail.high_p_hydrogenation });
+  if (detail.low_p_hydrogenation)
+    stepWindows.push({ key: "low_p_hydrogenation", label: "Low P Hydro", color: "#ff6400", fillAlpha: 0.15, info: detail.low_p_hydrogenation });
+  if (detail.hydrogenation)
+    stepWindows.push({ key: "hydrogenation", label: "Hydrogenation", color: "#0064ff", fillAlpha: 0.25, info: detail.hydrogenation });
+
   const timestamps = tsData.data.map((row) => row[0] as string);
   const colData = { columns: tsData.columns, data: tsData.data };
   const ts0 = timestamps[0];
@@ -75,13 +89,10 @@ export default function CycleDetailView({ cycleId, onExport, catalystType }: Pro
       visible: isVis ? true : "legendonly",
     });
 
-    // fill traces for high-P and low-P windows
-    for (const [window, alpha] of [
-      [detail.high_p, 0.3],
-      [detail.low_p, 0.15],
-    ] as const) {
-      const wStart = new Date(window.start).getTime();
-      const wEnd = new Date(window.end).getTime();
+    // fill traces for all step windows
+    for (const sw of stepWindows) {
+      const wStart = new Date(sw.info.start).getTime();
+      const wEnd = new Date(sw.info.end).getTime();
       const wTs: string[] = [];
       const wVals: (number | null)[] = [];
       for (let j = 0; j < timestamps.length; j++) {
@@ -98,7 +109,7 @@ export default function CycleDetailView({ cycleId, onExport, catalystType }: Pro
           mode: "lines",
           line: { width: 0 },
           fill: "tozeroy",
-          fillcolor: `rgba(${r},${g},${b},${alpha})`,
+          fillcolor: `rgba(${r},${g},${b},${sw.fillAlpha})`,
           legendgroup: label,
           showlegend: false,
           hoverinfo: "skip",
@@ -117,53 +128,31 @@ export default function CycleDetailView({ cycleId, onExport, catalystType }: Pro
   traces.push(...buildConditionTraces(colData, timestamps));
 
   // ── Window shading vrects ──
-  const shapes: Partial<Plotly.Shape>[] = [
-    {
-      type: "rect",
-      xref: "x",
-      yref: "paper",
-      x0: detail.high_p.start,
-      x1: detail.high_p.end,
+  const shapes: Partial<Plotly.Shape>[] = stepWindows.map((sw) => {
+    const [sr, sg, sb] = parseColor(sw.color);
+    return {
+      type: "rect" as const,
+      xref: "x" as const,
+      yref: "paper" as const,
+      x0: sw.info.start,
+      x1: sw.info.end,
       y0: 0,
       y1: 1,
-      fillcolor: "rgba(0,100,255,0.06)",
+      fillcolor: `rgba(${sr},${sg},${sb},0.06)`,
       line: { width: 0 },
-    },
-    {
-      type: "rect",
-      xref: "x",
-      yref: "paper",
-      x0: detail.low_p.start,
-      x1: detail.low_p.end,
-      y0: 0,
-      y1: 1,
-      fillcolor: "rgba(255,100,0,0.06)",
-      line: { width: 0 },
-    },
-  ];
+    };
+  });
 
-  const annotations: Partial<Plotly.Annotations>[] = [
-    {
-      x: detail.high_p.start,
-      y: 1,
-      xref: "x",
-      yref: "paper",
-      text: "High P",
-      showarrow: false,
-      font: { size: 11, color: "#0064ff" },
-      yanchor: "bottom",
-    },
-    {
-      x: detail.low_p.start,
-      y: 1,
-      xref: "x",
-      yref: "paper",
-      text: "Low P",
-      showarrow: false,
-      font: { size: 11, color: "#ff6400" },
-      yanchor: "bottom",
-    },
-  ];
+  const annotations: Partial<Plotly.Annotations>[] = stepWindows.map((sw) => ({
+    x: sw.info.start,
+    y: 1,
+    xref: "x" as const,
+    yref: "paper" as const,
+    text: sw.label,
+    showarrow: false,
+    font: { size: 11, color: sw.color },
+    yanchor: "bottom" as const,
+  }));
 
   const { axes } = multiAxisLayout();
 
@@ -207,35 +196,44 @@ export default function CycleDetailView({ cycleId, onExport, catalystType }: Pro
               <tr>
                 <th className="text-left">Species</th>
                 <th className="text-left">Unit</th>
-                <th className="text-right">High-P Area</th>
-                <th className="text-right">Low-P Area</th>
-                <th className="text-right">Total</th>
+                {stepWindows.map((sw) => (
+                  <th key={sw.key} className="text-right">{sw.label}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {detail.integration.map((row) => (
-                <tr
-                  key={row.species}
-                  onClick={() =>
-                    setHighlighted((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(row.species)) next.delete(row.species);
-                      else next.add(row.species);
-                      return next;
-                    })
-                  }
-                  className={highlighted.has(row.species) ? "row-highlighted" : ""}
-                  style={{ cursor: "pointer" }}
-                >
-                  <td>{row.species}</td>
-                  <td>{row.unit}</td>
-                  <td className="text-right">{row.high_p_area.toFixed(2)}</td>
-                  <td className="text-right">{row.low_p_area.toFixed(2)}</td>
-                  <td className="text-right font-semibold">
-                    {(row.high_p_area + row.low_p_area).toFixed(2)}
-                  </td>
-                </tr>
-              ))}
+              {(() => {
+                const firstStep = stepWindows[0]?.key;
+                const speciesRows = firstStep ? (detail.integration[firstStep] ?? []) : [];
+                return speciesRows.map((row) => (
+                  <tr
+                    key={row.species}
+                    onClick={() =>
+                      setHighlighted((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(row.species)) next.delete(row.species);
+                        else next.add(row.species);
+                        return next;
+                      })
+                    }
+                    className={highlighted.has(row.species) ? "row-highlighted" : ""}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <td>{row.species}</td>
+                    <td>{row.unit}</td>
+                    {stepWindows.map((sw) => {
+                      const stepRows = detail.integration[sw.key] ?? [];
+                      const match = stepRows.find((r) => r.species === row.species);
+                      const val = match?.area;
+                      return (
+                        <td key={sw.key} className="text-right">
+                          {val != null ? val.toFixed(2) : "—"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ));
+              })()}
             </tbody>
           </table>
         </div>
