@@ -42,30 +42,33 @@ export default function OverviewPlot({ onCycleClick, catalystType }: Props) {
   traces.push(...buildConditionTraces(colData, timestamps));
 
   // Cycle marker shapes
-  const shapes: Partial<Plotly.Shape>[] = data.cycles.map((c) => ({
-    type: "rect",
-    xref: "x",
-    yref: "paper",
-    x0: c.hp_start,
-    x1: c.lp_end,
-    y0: 0,
-    y1: 1,
-    fillcolor: "rgba(0,100,255,0.05)",
-    line: { width: 0 },
-  }));
+  const shapes: Partial<Plotly.Shape>[] = data.cycles
+    .filter((c) => c.start && c.end)
+    .map((c) => ({
+      type: "rect" as const,
+      xref: "x" as const,
+      yref: "paper" as const,
+      x0: c.start!,
+      x1: c.end!,
+      y0: 0,
+      y1: 1,
+      fillcolor: "rgba(0,100,255,0.05)",
+      line: { width: 0 },
+    }));
 
   // Cycle label annotations (every 3rd)
   const annotations: Partial<Plotly.Annotations>[] = data.cycles
     .filter((_, i) => i % 3 === 0)
+    .filter((c) => c.start)
     .map((c) => ({
-      x: c.hp_start,
+      x: c.start!,
       y: 1,
-      xref: "x",
-      yref: "paper",
+      xref: "x" as const,
+      yref: "paper" as const,
       text: `${c.cycle_id}`,
       showarrow: false,
       font: { size: 9, color: "#666" },
-      yanchor: "bottom",
+      yanchor: "bottom" as const,
     }));
 
   const { axes } = multiAxisLayout();
@@ -95,9 +98,10 @@ export default function OverviewPlot({ onCycleClick, catalystType }: Props) {
           let bestCycle = data.cycles[0];
           let bestDist = Infinity;
           for (const c of data.cycles) {
+            if (!c.start || !c.end) continue;
             const mid =
-              (new Date(c.hp_start).getTime() +
-                new Date(c.lp_end).getTime()) /
+              (new Date(c.start).getTime() +
+                new Date(c.end).getTime()) /
               2;
             const dist = Math.abs(clickX - mid);
             if (dist < bestDist) {
