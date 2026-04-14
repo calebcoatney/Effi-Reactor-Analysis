@@ -332,7 +332,9 @@ def build_full_cycles(
     )
     
     # Step 3: Pair capture/purge with hydrogenation
+    # Greedy forward matching: each pair is consumed at most once.
     full_cycles = []
+    available_pairs = list(capture_purge_pairs)
     
     for hydro_cycle in hydro_cycles:
         # Find hydrogenation start index
@@ -343,14 +345,19 @@ def build_full_cycles(
         else:
             continue  # Skip malformed cycle
             
-        # Find most recent capture/purge pair that ended before hydrogenation
+        # Find most recent *unconsumed* capture/purge pair that ended before hydro
         best_pair = None
+        best_idx = -1
         best_purge_end = -1
         
-        for capture_win, purge_win in capture_purge_pairs:
+        for pi, (capture_win, purge_win) in enumerate(available_pairs):
             if purge_win.end_idx <= hydro_start_idx and purge_win.end_idx > best_purge_end:
                 best_pair = (capture_win, purge_win)
+                best_idx = pi
                 best_purge_end = purge_win.end_idx
+        
+        if best_idx >= 0:
+            available_pairs.pop(best_idx)
         
         # Step 4: Handle catalyst-specific hydrogenation merging
         if catalyst_type.upper() == "ZA":
