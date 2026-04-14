@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .cycle_detection import detect_cycles
+from .cycle_detection import build_full_cycles
 from .data_loading import load_experiment
 from .integration import NATIVE_SPECIES, analyze_experiment, integrate_species
 from .models import Cycle
@@ -27,7 +27,8 @@ from .models import Cycle
 class AppState:
     df: pd.DataFrame | None = None
     cycles: list[Cycle] = field(default_factory=list)
-    results: pd.DataFrame | None = None
+    results: dict[str, pd.DataFrame] = field(default_factory=dict)
+    catalyst_type: str = "CZA"
     reactant_bases: list[str] = field(default_factory=list)  # e.g. ["3#HighPH2", "4#CO2", ...]
 
 
@@ -113,6 +114,8 @@ class LoadRequest(BaseModel):
     ir_file: str
     oxygen_file: str | None = None
     offset_hours: float = 0.0
+    catalyst_type: str = "CZA"  # "CZA" or "ZA"
+    co2_mfc_col: str | None = None  # e.g. "5#10%CO2 RSP"
 
 
 @app.post("/experiment/load")
@@ -128,8 +131,9 @@ def load_experiment_endpoint(req: LoadRequest):
         req.oxygen_file,
         offset=pd.Timedelta(hours=req.offset_hours),
     )
-    state.cycles = detect_cycles(state.df)
-    state.results = analyze_experiment(state.df, state.cycles)
+    state.catalyst_type = req.catalyst_type
+    state.cycles = build_full_cycles(state.df, catalyst_type=req.catalyst_type, co2_mfc_col=req.co2_mfc_col)
+    state.results = analyze_experiment(state.df, state.cycles, catalyst_type=req.catalyst_type)
 
     # Auto-discover reactant base names (same logic as plot_merged)
     cols = state.df.columns
@@ -144,6 +148,7 @@ def load_experiment_endpoint(req: LoadRequest):
         "columns": state.df.shape[1],
         "column_names": state.df.columns.tolist(),
         "n_cycles": len(state.cycles),
+        "catalyst_type": state.catalyst_type,
         "time_range": {
             "start": state.df["Timestamp"].min().isoformat(),
             "end": state.df["Timestamp"].max().isoformat(),
@@ -156,21 +161,27 @@ def load_experiment_endpoint(req: LoadRequest):
 # ---------------------------------------------------------------------------
 
 
+def _window_dict(w):
+    """Convert Window to dict, or None if w is None."""
+    if w is None:
+        return None
+    return {
+        "label": w.label,
+        "start": w.start.isoformat(),
+        "end": w.end.isoformat(),
+        "start_idx": w.start_idx,
+        "end_idx": w.end_idx,
+    }
+
+
 def _cycle_summary(c: Cycle) -> dict:
     return {
         "cycle_id": c.cycle_id,
-        "high_p": {
-            "start": c.high_p.start.isoformat(),
-            "end": c.high_p.end.isoformat(),
-            "start_idx": c.high_p.start_idx,
-            "end_idx": c.high_p.end_idx,
-        },
-        "low_p": {
-            "start": c.low_p.start.isoformat(),
-            "end": c.low_p.end.isoformat(),
-            "start_idx": c.low_p.start_idx,
-            "end_idx": c.low_p.end_idx,
-        },
+        "capture": _window_dict(c.capture),
+        "purge": _window_dict(c.purge),
+        "high_p_hydrogenation": _window_dict(c.high_p_hydrogenation),
+        "low_p_hydrogenation": _window_dict(c.low_p_hydrogenation),
+        "hydrogenation": _window_dict(c.hydrogenation),
     }
 
 
@@ -193,12 +204,15 @@ def get_cycle(cycle_id: int):
         raise HTTPException(status_code=404, detail=f"Cycle {cycle_id} not found")
 
     # Integration results for this cycle
-    cycle_results = state.results[state.results["cycle_id"] == cycle_id]
-    integration = cycle_results[["species", "unit", "high_p_area", "low_p_area"]].to_dict(orient="records")
-    for row in integration:
-        for k, v in row.items():
-            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
-                row[k] = None
+    integration = {}
+    for step_name, step_df in state.results.items():
+        cycle_rows = step_df[step_df["cycle_id"] == cycle_id]
+        rows = cycle_rows[["species", "unit", "area"]].to_dict(orient="records")
+        for row in rows:
+            for k, v in row.items():
+                if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                    row[k] = None
+        integration[step_name] = rows
 
     return {
         **_cycle_summary(cycle),
@@ -220,8 +234,10 @@ def get_cycle_data(cycle_id: int, pad_minutes: float = 2.0):
         raise HTTPException(status_code=404, detail=f"Cycle {cycle_id} not found")
 
     pad = pd.Timedelta(minutes=pad_minutes)
-    t_start = cycle.high_p.start - pad
-    t_end = cycle.low_p.end + pad
+    all_windows = [w for w in (cycle.capture, cycle.purge, cycle.high_p_hydrogenation,
+                               cycle.low_p_hydrogenation, cycle.hydrogenation) if w is not None]
+    t_start = min(w.start for w in all_windows) - pad
+    t_end = max(w.end for w in all_windows) + pad
     mask = (state.df["Timestamp"] >= t_start) & (state.df["Timestamp"] <= t_end)
     view = state.df.loc[mask]
 
@@ -288,12 +304,14 @@ def get_overview(max_points: int = 2000):
     # Cycle markers
     cycle_markers = []
     for c in state.cycles:
+        all_windows = [w for w in (c.capture, c.purge, c.high_p_hydrogenation,
+                                   c.low_p_hydrogenation, c.hydrogenation) if w is not None]
         cycle_markers.append({
             "cycle_id": c.cycle_id,
-            "hp_start": c.high_p.start.isoformat(),
-            "hp_end": c.high_p.end.isoformat(),
-            "lp_start": c.low_p.start.isoformat(),
-            "lp_end": c.low_p.end.isoformat(),
+            "start": min(w.start for w in all_windows).isoformat() if all_windows else None,
+            "end": max(w.end for w in all_windows).isoformat() if all_windows else None,
+            "capture": _window_dict(c.capture),
+            "purge": _window_dict(c.purge),
         })
 
     return {
@@ -310,26 +328,31 @@ def get_overview(max_points: int = 2000):
 
 @app.get("/export/excel")
 def export_excel():
-    """Return an Excel workbook with High-P and Low-P integration tables."""
+    """Return an Excel workbook with integration results by step."""
     _require_loaded()
-    if state.results is None or state.results.empty:
+    if not state.results:
         raise HTTPException(status_code=400, detail="No integration results available.")
 
     import io
     from fastapi.responses import StreamingResponse
 
-    results = state.results
-
-    # Pivot to wide: rows = cycle, columns = species
-    hp = results.pivot(index="cycle_id", columns="species", values="high_p_area")
-    lp = results.pivot(index="cycle_id", columns="species", values="low_p_area")
-    hp.index.name = "Cycle"
-    lp.index.name = "Cycle"
+    SHEET_NAMES = {
+        "capture": "Capture Integration (% s)",
+        "purge": "Purge Integration (% s)",
+        "high_p_hydrogenation": "High P Hydrogenation (% s)",
+        "low_p_hydrogenation": "Low P Hydrogenation (% s)",
+        "hydrogenation": "Hydrogenation (% s)",
+    }
 
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        hp.to_excel(writer, sheet_name="High P Integration (% s)")
-        lp.to_excel(writer, sheet_name="Low P Integration (% s)")
+        for step_name, step_df in state.results.items():
+            if step_df.empty:
+                continue
+            pivot = step_df.pivot(index="cycle_id", columns="species", values="area")
+            pivot.index.name = "Cycle"
+            sheet = SHEET_NAMES.get(step_name, step_name)
+            pivot.to_excel(writer, sheet_name=sheet)
     buf.seek(0)
 
     return StreamingResponse(
