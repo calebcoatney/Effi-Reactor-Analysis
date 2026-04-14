@@ -70,29 +70,50 @@ def analyze_experiment(
     df: pd.DataFrame,
     cycles: list[Cycle],
     species_cols: list[str] | None = None,
-) -> pd.DataFrame:
-    """Integrate all species for both windows of every cycle.
+    catalyst_type: str = "CZA",
+) -> dict[str, pd.DataFrame]:
+    """Integrate all species for every step window of every cycle.
 
-    Returns a tidy DataFrame with columns:
-    ``cycle_id | species | unit | high_p_area | low_p_area``
+    Returns a dict of DataFrames keyed by step name. Each DataFrame has columns:
+    ``cycle_id | species | unit | area``
+
+    For CZA: keys are "capture", "purge", "high_p_hydrogenation", "low_p_hydrogenation".
+    For ZA: keys are "capture", "purge", "hydrogenation".
     """
     if species_cols is None:
         species_cols = [c for c in NATIVE_SPECIES if c in df.columns]
 
-    rows = []
-    for cycle in cycles:
-        hp = integrate_species(df, cycle.high_p, species_cols)
-        lp = integrate_species(df, cycle.low_p, species_cols)
+    if catalyst_type == "ZA":
+        step_fields = [
+            ("capture", "capture"),
+            ("purge", "purge"),
+            ("hydrogenation", "hydrogenation"),
+        ]
+    else:
+        step_fields = [
+            ("capture", "capture"),
+            ("purge", "purge"),
+            ("high_p_hydrogenation", "high_p_hydrogenation"),
+            ("low_p_hydrogenation", "low_p_hydrogenation"),
+        ]
 
-        for col in species_cols:
-            species_name = col.removesuffix(" (%)")
+    result: dict[str, pd.DataFrame] = {}
+    for step_name, attr_name in step_fields:
+        rows = []
+        for cycle in cycles:
+            window = getattr(cycle, attr_name, None)
+            if window is not None:
+                areas = integrate_species(df, window, species_cols)
+            else:
+                areas = {col: float("nan") for col in species_cols}
 
-            rows.append({
-                "cycle_id": cycle.cycle_id,
-                "species": species_name,
-                "unit": "%·s",
-                "high_p_area": hp[col],
-                "low_p_area": lp[col],
-            })
+            for col in species_cols:
+                rows.append({
+                    "cycle_id": cycle.cycle_id,
+                    "species": col.removesuffix(" (%)"),
+                    "unit": "%·s",
+                    "area": areas[col],
+                })
+        result[step_name] = pd.DataFrame(rows)
 
-    return pd.DataFrame(rows)
+    return result
