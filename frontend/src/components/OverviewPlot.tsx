@@ -16,6 +16,8 @@ interface Props {
 }
 
 export default function OverviewPlot({ onCycleClick, catalystType }: Props) {
+  // Note: catalystType will be used for mode-specific rendering in future updates
+  catalystType; // suppress unused variable warning
   const [data, setData] = useState<OverviewResponse | null>(null);
 
   useEffect(() => {

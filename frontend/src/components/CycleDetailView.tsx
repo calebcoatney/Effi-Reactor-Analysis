@@ -20,6 +20,8 @@ interface Props {
 }
 
 export default function CycleDetailView({ cycleId, onExport, catalystType }: Props) {
+  // Note: catalystType will be used for mode-specific rendering in future updates
+  catalystType; // suppress unused variable warning
   const [detail, setDetail] = useState<CycleDetail | null>(null);
   const [tsData, setTsData] = useState<CycleDataResponse | null>(null);
   const [loading, setLoading] = useState(false);
