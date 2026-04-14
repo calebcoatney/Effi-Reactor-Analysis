@@ -9,6 +9,8 @@ export interface LoadRequest {
   ir_file: string;
   oxygen_file?: string;
   offset_hours?: number;
+  catalyst_type?: "CZA" | "ZA";
+  co2_mfc_col?: string;
 }
 
 export interface LoadResponse {
@@ -16,6 +18,7 @@ export interface LoadResponse {
   columns: number;
   column_names: string[];
   n_cycles: number;
+  catalyst_type: string;
   time_range: { start: string; end: string };
 }
 
@@ -36,6 +39,7 @@ export interface DiscoverResponse {
 }
 
 export interface WindowInfo {
+  label: string;
   start: string;
   end: string;
   start_idx: number;
@@ -44,19 +48,21 @@ export interface WindowInfo {
 
 export interface CycleSummary {
   cycle_id: number;
-  high_p: WindowInfo;
-  low_p: WindowInfo;
+  capture: WindowInfo | null;
+  purge: WindowInfo | null;
+  high_p_hydrogenation: WindowInfo | null;
+  low_p_hydrogenation: WindowInfo | null;
+  hydrogenation: WindowInfo | null;
 }
 
 export interface IntegrationRow {
   species: string;
   unit: string;
-  high_p_area: number;
-  low_p_area: number;
+  area: number | null;
 }
 
 export interface CycleDetail extends CycleSummary {
-  integration: IntegrationRow[];
+  integration: Record<string, IntegrationRow[]>;
 }
 
 export interface CycleDataResponse {
@@ -67,10 +73,10 @@ export interface CycleDataResponse {
 
 export interface CycleMarker {
   cycle_id: number;
-  hp_start: string;
-  hp_end: string;
-  lp_start: string;
-  lp_end: string;
+  start: string | null;
+  end: string | null;
+  capture: WindowInfo | null;
+  purge: WindowInfo | null;
 }
 
 export interface OverviewResponse {
