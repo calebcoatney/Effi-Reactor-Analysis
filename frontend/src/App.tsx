@@ -10,6 +10,8 @@ function App() {
   const [loadResult, setLoadResult] = useState<LoadResponse | null>(null);
   const [selectedCycle, setSelectedCycle] = useState(1);
 
+  const catalystType = loadResult?.catalyst_type ?? "CZA";
+
   return (
     <div className="app-container">
       <header className="app-header">
@@ -25,14 +27,14 @@ function App() {
 
       {loadResult && (
         <>
-          <OverviewPlot onCycleClick={setSelectedCycle} />
+          <OverviewPlot onCycleClick={setSelectedCycle} catalystType={catalystType} />
           <div className="section-divider" />
           <CycleNavigator
             cycleId={selectedCycle}
             totalCycles={loadResult.n_cycles}
             onChange={setSelectedCycle}
           />
-          <CycleDetailView cycleId={selectedCycle} onExport={downloadExcel} />
+          <CycleDetailView cycleId={selectedCycle} onExport={downloadExcel} catalystType={catalystType} />
         </>
       )}
     </div>

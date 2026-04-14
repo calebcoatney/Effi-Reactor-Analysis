@@ -12,9 +12,10 @@ import {
 
 interface Props {
   onCycleClick: (cycleId: number) => void;
+  catalystType: string;
 }
 
-export default function OverviewPlot({ onCycleClick }: Props) {
+export default function OverviewPlot({ onCycleClick, catalystType }: Props) {
   const [data, setData] = useState<OverviewResponse | null>(null);
 
   useEffect(() => {

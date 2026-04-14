@@ -77,6 +77,17 @@ export default function FileSelector({ onLoaded }: Props) {
   const [mm, setMM] = useState(0);
   const [ss, setSS] = useState(0);
 
+  // catalyst type and CO2 MFC column selection
+  const [catalystType, setCatalystType] = useState<"CZA" | "ZA">("CZA");
+  const [co2MfcCol, setCo2MfcCol] = useState<string | null>(null);
+
+  // known CO2 MFC options
+  const co2MfcOptions = [
+    "5#10%CO2 RSP",
+    "4#CO2 RSP", 
+    "2#flueCO2 RSP",
+  ];
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -154,6 +165,8 @@ export default function FileSelector({ onLoaded }: Props) {
           ? `${discovered.path}/${oxygenFile}`
           : undefined,
         offset_hours: hh + mm / 60 + ss / 3600,
+        catalyst_type: catalystType,
+        co2_mfc_col: co2MfcCol ?? undefined,
       };
       const resp = await loadExperiment(req);
       onLoaded(resp);
@@ -283,6 +296,56 @@ export default function FileSelector({ onLoaded }: Props) {
           <span className="time-separator">:</span>
           <TimeUnit value={ss} onChange={setSS} max={59} label="s" />
         </div>
+      </div>
+
+      {/* ── catalyst type ── */}
+      <div style={{ marginBottom: 16 }}>
+        <label>Catalyst Type</label>
+        <div style={{ display: "flex", gap: 6 }}>
+          {(
+            [
+              { value: "CZA", label: "CZA (Pressure Swing)" },
+              { value: "ZA", label: "ZA (Atmospheric)" },
+            ] as const
+          ).map((opt) => (
+            <button
+              key={opt.value}
+              className={`role-btn${catalystType === opt.value ? " role-btn--active" : ""}`}
+              style={
+                catalystType === opt.value
+                  ? { background: "#2563eb", borderColor: "#2563eb" }
+                  : undefined
+              }
+              onClick={() => setCatalystType(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── CO2 MFC column selector ── */}
+      <div style={{ marginBottom: 16 }}>
+        <label>CO₂ MFC (for Capture detection)</label>
+        <select
+          value={co2MfcCol ?? ""}
+          onChange={(e) => setCo2MfcCol(e.target.value || null)}
+          style={{
+            display: "block",
+            marginTop: 4,
+            padding: "6px 10px",
+            borderRadius: 6,
+            border: "1px solid var(--color-border)",
+            background: "var(--color-bg)",
+            color: "var(--color-text)",
+            fontSize: "0.85rem",
+          }}
+        >
+          <option value="">Auto / None</option>
+          {co2MfcOptions.map((col) => (
+            <option key={col} value={col}>{col}</option>
+          ))}
+        </select>
       </div>
 
       <button

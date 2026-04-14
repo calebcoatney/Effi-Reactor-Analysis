@@ -16,9 +16,10 @@ import {
 interface Props {
   cycleId: number;
   onExport?: () => void;
+  catalystType: string;
 }
 
-export default function CycleDetailView({ cycleId, onExport }: Props) {
+export default function CycleDetailView({ cycleId, onExport, catalystType }: Props) {
   const [detail, setDetail] = useState<CycleDetail | null>(null);
   const [tsData, setTsData] = useState<CycleDataResponse | null>(null);
   const [loading, setLoading] = useState(false);
