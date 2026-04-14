@@ -115,16 +115,9 @@ def detect_cycles(
         # ramping down (same point as hp_end)
         lp_start = hp_end
 
-        # End of low-P: first row where T RSP drops below t_rsp_low
-        # after having been above t_rsp_high, searching past cycle_end
-        # (temperature ramp-down can extend beyond H2 off)
-        search_end = min(
-            off_indices[c + 1] if c + 1 < n_pairs else len(df) - 1,
-            len(df) - 1,
-        )
-        lp_end = _first_drop_below(t_rsp, t_rsp_high, t_rsp_low, lp_start, search_end)
-        if lp_end is None:
-            lp_end = cycle_end
+        # End of low-P: bounded by cycle_end (H2 OFF).
+        # Hydrogenation ends when H2 stops flowing, not when reactor cools.
+        lp_end = cycle_end
 
         cycle_num += 1
         cycles.append(Cycle(
@@ -272,6 +265,89 @@ def detect_capture_purge_windows(
     return windows
 
 
+def detect_capture_purge_cza(
+    df: pd.DataFrame,
+    *,
+    n2_rsp_col: str = "6#HighPN2 RSP",
+    co2_mfc_col: str | None = None,
+    co2_mfc_on: float = 5.0,
+    n2_on_threshold: float = 50.0,
+    time_col: str = "Timestamp",
+) -> list[tuple[Window, Window]]:
+    """Detect capture and purge windows for CZA experiments.
+
+    CZA pattern: N2 is mostly OFF. Brief N2-ON periods are purge steps.
+    CO2 MFC-ON periods preceding each purge are capture steps.
+
+    Algorithm:
+    1. Find N2 ON→OFF transitions (purge windows)
+    2. For each purge, look backwards for the preceding CO2 ON period (capture)
+    """
+    n2_rsp = df[n2_rsp_col].values
+    timestamps = df[time_col]
+
+    # Find N2 ON→OFF transition pairs (purge windows)
+    purge_windows: list[tuple[int, int]] = []
+    is_on = False
+    on_start = 0
+    for i in range(len(n2_rsp)):
+        if not is_on and n2_rsp[i] > n2_on_threshold:
+            on_start = i
+            is_on = True
+        elif is_on and n2_rsp[i] <= n2_on_threshold:
+            purge_windows.append((on_start, i))
+            is_on = False
+
+    if not purge_windows:
+        return []
+
+    # For each purge, find the preceding capture (CO2 MFC ON period)
+    pairs: list[tuple[Window, Window]] = []
+
+    if co2_mfc_col is not None and co2_mfc_col in df.columns:
+        co2_rsp = df[co2_mfc_col].values
+    else:
+        co2_rsp = None
+
+    for purge_start_idx, purge_end_idx in purge_windows:
+        purge_win = Window(
+            label="purge",
+            start=timestamps.iloc[purge_start_idx],
+            end=timestamps.iloc[purge_end_idx],
+            start_idx=purge_start_idx,
+            end_idx=purge_end_idx,
+        )
+
+        capture_win = None
+        if co2_rsp is not None:
+            # Scan backwards from purge start to find CO2 ON period
+            j = purge_start_idx - 1
+            cap_end = None
+            while j >= 0:
+                if co2_rsp[j] > co2_mfc_on:
+                    cap_end = j + 1
+                    break
+                j -= 1
+
+            if cap_end is not None:
+                cap_start = cap_end - 1
+                while cap_start > 0 and co2_rsp[cap_start - 1] > co2_mfc_on:
+                    cap_start -= 1
+
+                capture_win = Window(
+                    label="capture",
+                    start=timestamps.iloc[cap_start],
+                    end=timestamps.iloc[cap_end],
+                    start_idx=cap_start,
+                    end_idx=cap_end,
+                )
+
+        if capture_win is not None:
+            pairs.append((capture_win, purge_win))
+
+    return pairs
+
+
 def build_full_cycles(
     df: pd.DataFrame,
     *,
@@ -323,13 +399,21 @@ def build_full_cycles(
         time_col=time_col,
     )
     
-    # Step 2: Get capture/purge pairs
-    capture_purge_pairs = detect_capture_purge_windows(
-        df,
-        n2_rsp_col=n2_rsp_col,
-        co2_mfc_col=co2_mfc_col,
-        time_col=time_col,
-    )
+    # Step 2: Get capture/purge pairs (catalyst-specific detection)
+    if catalyst_type.upper() == "CZA":
+        capture_purge_pairs = detect_capture_purge_cza(
+            df,
+            n2_rsp_col=n2_rsp_col,
+            co2_mfc_col=co2_mfc_col,
+            time_col=time_col,
+        )
+    else:
+        capture_purge_pairs = detect_capture_purge_windows(
+            df,
+            n2_rsp_col=n2_rsp_col,
+            co2_mfc_col=co2_mfc_col,
+            time_col=time_col,
+        )
     
     # Step 3: Pair capture/purge with hydrogenation
     # Greedy forward matching: each pair is consumed at most once.
