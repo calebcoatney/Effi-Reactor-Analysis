@@ -147,20 +147,26 @@ def detect_capture_purge_windows(
     n2_rsp_col: str = "6#HighPN2 RSP",
     co2_mfc_col: str | None = None,
     co2_mfc_on: float = 1.0,
-    n2_drop_frac: float = 0.10,
+    n2_drop_frac: float = 0.05,
     n2_off_threshold: float = 1.0,
     time_col: str = "Timestamp",
 ) -> list[tuple[Window, Window]]:
     """Detect capture and purge windows from N2 RSP patterns.
-    
+
     Algorithm:
-    1. Find N2 baseline: most common RSP value above the off threshold
-    2. Scan for "dips" - when N2 drops below baseline * (1 - n2_drop_frac) 
-       but stays above n2_off_threshold
-    3. If co2_mfc_col provided, confirm CO2 is flowing during the dip
-    4. Capture window: from dip start to when N2 recovers above threshold
-    5. Purge window: from N2 recovery to when N2 goes below n2_off_threshold
-    
+    1. Track a *local* N2 high-level that updates whenever N2 is in a stable
+       high region (above the dip threshold relative to the current level).
+       This handles experiments where the N2 setpoint changes mid-run
+       (e.g. 100 → 201 sccm), unlike a global mode which would anchor to the
+       most-common value and miss dips at a later, higher setpoint.
+    2. Scan for "dips" - when N2 drops to or below high_level*(1 - n2_drop_frac)
+       but stays above n2_off_threshold.  The comparison is inclusive (<=) so
+       that cycles whose N2 setpoint exactly equals the dip threshold are
+       correctly detected.
+    3. If co2_mfc_col provided, confirm CO2 is flowing during the dip.
+    4. Capture window: from dip start to when N2 recovers above recovery threshold.
+    5. Purge window: from N2 recovery to when N2 goes below n2_off_threshold.
+
     Parameters
     ----------
     df : DataFrame
@@ -172,96 +178,104 @@ def detect_capture_purge_windows(
     co2_mfc_on : float
         Threshold for CO2 flow confirmation
     n2_drop_frac : float
-        Fraction drop from baseline to detect capture (default 0.10 = 10%)
+        Fraction drop from local high level to detect capture (default 0.05 = 5%).
+        Note: must be loose enough to handle floating-point quantization in
+        N2 RSP readings (e.g. setpoint 100→90 may show as 100.5→90.5, a 9.95%
+        drop), and tight enough to avoid false positives.
     n2_off_threshold : float
         Threshold below which N2 is considered "off"
     time_col : str
         Timestamp column name
-        
+
     Returns
     -------
     list of (capture_window, purge_window) tuples
     """
     n2_rsp = df[n2_rsp_col].values
     timestamps = df[time_col]
-    
-    # Step 1: Find N2 baseline (most common value above off threshold)
-    n2_on_values = n2_rsp[n2_rsp > n2_off_threshold]
-    if len(n2_on_values) == 0:
-        return []
-    
-    # Round to nearest integer for grouping discrete setpoints
-    n2_on_rounded = np.round(n2_on_values).astype(int)
-    baseline = pd.Series(n2_on_rounded).mode().iloc[0]
-    
-    # Step 2: Scan for dips
-    dip_threshold = baseline * (1 - n2_drop_frac)
-    
+
     windows = []
+    high_level: float | None = None
     i = 0
+
     while i < len(n2_rsp):
-        # Find start of dip
-        if (n2_rsp[i] < dip_threshold and 
-            n2_rsp[i] > n2_off_threshold):
-            
-            dip_start = i
-            
-            # Step 3: Optional CO2 confirmation during dip
-            if co2_mfc_col is not None:
-                co2_mfc = df[co2_mfc_col].iloc[dip_start]
-                if co2_mfc < co2_mfc_on:
-                    i += 1
-                    continue
-            
-            # Find end of dip (recovery back above threshold)
-            recovery_threshold = baseline * (1 - n2_drop_frac/2)  # Half-way back
-            dip_end = None
-            j = dip_start + 1
-            while j < len(n2_rsp):
-                if n2_rsp[j] > recovery_threshold:
-                    dip_end = j
-                    break
-                j += 1
-            
-            if dip_end is None:
-                break  # No recovery found
-            
-            # Step 4: Capture window (dip start to recovery)
-            capture_window = Window(
-                label="capture",
-                start=timestamps.iloc[dip_start],
-                end=timestamps.iloc[dip_end],
-                start_idx=dip_start,
-                end_idx=dip_end,
-            )
-            
-            # Step 5: Purge window (recovery to N2 off)
-            purge_start = dip_end
-            purge_end = None
-            j = purge_start + 1
-            while j < len(n2_rsp):
-                if n2_rsp[j] < n2_off_threshold:
-                    purge_end = j
-                    break
-                j += 1
-            
-            if purge_end is None:
-                purge_end = len(n2_rsp) - 1  # End of data
-                
-            purge_window = Window(
-                label="purge",
-                start=timestamps.iloc[purge_start],
-                end=timestamps.iloc[purge_end],
-                start_idx=purge_start,
-                end_idx=purge_end,
-            )
-            
-            windows.append((capture_window, purge_window))
-            
-            i = purge_end + 1
-        else:
-            i += 1
-    
+        v = float(n2_rsp[i])
+
+        # Update local high-level when N2 is in a stable high region.
+        # The condition "v > high_level * (1 - n2_drop_frac)" means v is NOT
+        # in a dip relative to the current high level, so it's safe to use as
+        # a new baseline.  This naturally prevents updating during a dip.
+        if v > n2_off_threshold:
+            if high_level is None:
+                high_level = v
+            elif v > high_level * (1 - n2_drop_frac):
+                # Still in the stable-high band (or N2 setpoint increased)
+                high_level = max(high_level, v)
+
+        # Detect a dip using the current local high level
+        if high_level is not None:
+            dip_threshold = high_level * (1 - n2_drop_frac)
+
+            # Use <= so that N2 values exactly at the boundary are caught
+            if v <= dip_threshold and v > n2_off_threshold:
+                dip_start = i
+
+                # Optional CO2 confirmation at dip start
+                if co2_mfc_col is not None:
+                    co2_mfc = df[co2_mfc_col].iloc[dip_start]
+                    if co2_mfc < co2_mfc_on:
+                        i += 1
+                        continue
+
+                # Find end of dip (recovery back above recovery threshold)
+                recovery_threshold = high_level * (1 - n2_drop_frac / 2)
+                dip_end = None
+                j = dip_start + 1
+                while j < len(n2_rsp):
+                    if n2_rsp[j] > recovery_threshold:
+                        dip_end = j
+                        break
+                    j += 1
+
+                if dip_end is None:
+                    break  # No recovery found; stop scanning
+
+                # Capture window (dip start to recovery)
+                capture_window = Window(
+                    label="capture",
+                    start=timestamps.iloc[dip_start],
+                    end=timestamps.iloc[dip_end],
+                    start_idx=dip_start,
+                    end_idx=dip_end,
+                )
+
+                # Purge window (recovery to N2 off)
+                purge_start = dip_end
+                purge_end = None
+                j = purge_start + 1
+                while j < len(n2_rsp):
+                    if n2_rsp[j] < n2_off_threshold:
+                        purge_end = j
+                        break
+                    j += 1
+
+                if purge_end is None:
+                    purge_end = len(n2_rsp) - 1
+
+                purge_window = Window(
+                    label="purge",
+                    start=timestamps.iloc[purge_start],
+                    end=timestamps.iloc[purge_end],
+                    start_idx=purge_start,
+                    end_idx=purge_end,
+                )
+
+                windows.append((capture_window, purge_window))
+                i = purge_end + 1
+                continue
+
+        i += 1
+
     return windows
 
 
@@ -398,17 +412,34 @@ def build_full_cycles(
         t_rsp_col=t_rsp_col,
         time_col=time_col,
     )
-    
-    # Step 2: Get capture/purge pairs (catalyst-specific detection)
-    if catalyst_type.upper() == "CZA":
+
+    # Auto-detect the active CO2 RSP column if not supplied.  Different
+    # experiments use different MFCs (e.g. 5#10%CO2, 4#CO2, 2#flueCO2); the
+    # active one is the column with non-zero values.  This is critical for
+    # the CZA fallback, which can't find captures without it.
+    if co2_mfc_col is None:
+        candidates = ["5#10%CO2 RSP", "4#CO2 RSP", "2#flueCO2 RSP"]
+        for cand in candidates:
+            if cand in df.columns and (df[cand].fillna(0).abs() > 0.5).any():
+                co2_mfc_col = cand
+                break
+
+    # Step 2: Get capture/purge pairs.
+    #
+    # Strategy: try detect_capture_purge_windows() first (handles N2 dips).
+    # Fall back to detect_capture_purge_cza() only for CZA experiments where
+    # the windows algorithm finds nothing — this covers experiments (e.g.
+    # flue-CO2 CZA) where N2 only has two states (full ON / full OFF) with no
+    # intermediate "dip" level.
+    capture_purge_pairs = detect_capture_purge_windows(
+        df,
+        n2_rsp_col=n2_rsp_col,
+        co2_mfc_col=co2_mfc_col,
+        time_col=time_col,
+    )
+
+    if len(capture_purge_pairs) == 0 and catalyst_type.upper() == "CZA":
         capture_purge_pairs = detect_capture_purge_cza(
-            df,
-            n2_rsp_col=n2_rsp_col,
-            co2_mfc_col=co2_mfc_col,
-            time_col=time_col,
-        )
-    else:
-        capture_purge_pairs = detect_capture_purge_windows(
             df,
             n2_rsp_col=n2_rsp_col,
             co2_mfc_col=co2_mfc_col,
@@ -499,7 +530,25 @@ def build_full_cycles(
             )
             
         full_cycles.append(cycle)
-    
+
+    # Step 5: Drop leading pretreatment cycle(s) and renumber 1..N.
+    # Heuristic: a pretreatment hydrogenation has no preceding CO2 capture
+    # (capture is None) because no CO2 is dosed before pretreatment.  We
+    # only strip *leading* such cycles — interior captureless cycles are
+    # left in place (could indicate detection failure rather than
+    # pretreatment).  This makes our cycle 1 = Martha's cycle 1.
+    first_real = 0
+    for i, c in enumerate(full_cycles):
+        if c.capture is not None:
+            first_real = i
+            break
+    else:
+        first_real = len(full_cycles)  # no real cycles found
+    full_cycles = full_cycles[first_real:]
+
+    for new_id, c in enumerate(full_cycles, start=1):
+        c.cycle_id = new_id
+
     return full_cycles
 
 

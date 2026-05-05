@@ -27,7 +27,7 @@ function App() {
 
       {loadResult && (
         <>
-          <OverviewPlot onCycleClick={setSelectedCycle} catalystType={catalystType} />
+          <OverviewPlot key={loadResult.time_range.start} onCycleClick={setSelectedCycle} catalystType={catalystType} />
           <div className="section-divider" />
           <CycleNavigator
             cycleId={selectedCycle}
