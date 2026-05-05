@@ -8,6 +8,8 @@ ExportData*.txt
 ~$*
 260121_CZA-flueCO2/
 260209_10NaCZA_100 cycles/
+250929_Blanks/
+251013_K-ZA_Cycles 1-20_good/
 build/
 .claude/
 node_modules/
