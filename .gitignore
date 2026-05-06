@@ -12,6 +12,9 @@ ExportData*.txt
 251013_K-ZA_Cycles 1-20_good/
 build/
 .claude/
+notebooks/
+memory/
+docs/
 node_modules/
 dist/
 *.egg-info/
