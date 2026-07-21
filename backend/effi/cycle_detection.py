@@ -418,7 +418,7 @@ def build_full_cycles(
     # active one is the column with non-zero values.  This is critical for
     # the CZA fallback, which can't find captures without it.
     if co2_mfc_col is None:
-        candidates = ["5#10%CO2 RSP", "4#CO2 RSP", "2#flueCO2 RSP"]
+        candidates = ["5#10%CO2 RSP", "4#CO2 RSP", "2#flueCO2 RSP", "2#pureCO2 RSP"]
         for cand in candidates:
             if cand in df.columns and (df[cand].fillna(0).abs() > 0.5).any():
                 co2_mfc_col = cand

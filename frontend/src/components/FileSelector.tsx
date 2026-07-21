@@ -86,6 +86,7 @@ export default function FileSelector({ onLoaded }: Props) {
     "5#10%CO2 RSP",
     "4#CO2 RSP", 
     "2#flueCO2 RSP",
+    "2#pureCO2 RSP",
   ];
 
   const [loading, setLoading] = useState(false);
