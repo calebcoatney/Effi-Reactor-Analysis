@@ -26,14 +26,41 @@ def load_effi_reactor_data(files: list[str]) -> pd.DataFrame:
         dates.append(datetime.strptime(date_str, "%Y%m%d%H%M%S"))
 
     dataframes = []
+    leading_drop_cols: list = []
     for file, date in zip(files, dates):
         df = pd.read_csv(file, sep="\t")
-        df["Elapsed Time"] = pd.to_timedelta(df.iloc[:, 0])
+        # Locate the elapsed-time column. Some export formats prepend an
+        # integer row-index column, so the "Time" (H:MM:SS) values may live in
+        # column 0 or column 1. Prefer a column whose values look like clock
+        # times (contain ':'); fall back to the first timedelta-parseable one.
+        elapsed = None
+        candidates = []
+        for idx in range(min(2, df.shape[1])):
+            col = df.iloc[:, idx]
+            parsed = pd.to_timedelta(col, errors="coerce")
+            if parsed.notna().any():
+                looks_like_clock = (
+                    col.astype(str).str.contains(":", regex=False).any()
+                )
+                candidates.append((idx, parsed, looks_like_clock))
+        # Pick a clock-formatted column if present, otherwise the first valid.
+        for idx, parsed, is_clock in candidates:
+            if is_clock:
+                elapsed = parsed
+                leading_drop_cols = list(df.columns[: idx + 1])
+                break
+        if elapsed is None and candidates:
+            idx, parsed, _ = candidates[0]
+            elapsed = parsed
+            leading_drop_cols = list(df.columns[: idx + 1])
+        if elapsed is None:
+            raise ValueError(f"Could not find an elapsed-time column in {file}")
+        df["Elapsed Time"] = elapsed
         df["DateTime"] = date + df["Elapsed Time"]
         dataframes.append(df)
 
     df = pd.concat(dataframes, ignore_index=True)
-    df = df.drop(df.columns[0], axis=1)
+    df = df.drop(columns=leading_drop_cols)
 
     cols = df.columns.tolist()
     cols = ["DateTime", "Elapsed Time"] + [
@@ -150,6 +177,11 @@ def merge_reactor_ir(
         )
 
     # 3. merge_asof: backward (most recent reactor reading at or before IR ts)
+    # Ensure both join keys share the same datetime resolution (e.g. ns vs us),
+    # otherwise pandas raises MergeError on incompatible merge keys.
+    ir_df = ir_df.copy()
+    ir_df["Timestamp"] = ir_df["Timestamp"].astype("datetime64[ns]")
+    reactor["DateTime"] = reactor["DateTime"].astype("datetime64[ns]")
     merged = pd.merge_asof(
         ir_df.sort_values("Timestamp"),
         reactor.sort_values("DateTime"),
@@ -180,6 +212,10 @@ def merge_oxygen_into_ir(
 
     The Oxygen (%) column is inserted immediately before Batch Number.
     """
+    ir_df = ir_df.copy()
+    oxygen_df = oxygen_df.copy()
+    ir_df["Timestamp"] = ir_df["Timestamp"].astype("datetime64[ns]")
+    oxygen_df["Timestamp"] = oxygen_df["Timestamp"].astype("datetime64[ns]")
     merged = pd.merge_asof(
         ir_df.sort_values("Timestamp"),
         oxygen_df.sort_values("Timestamp"),
