@@ -10,6 +10,9 @@ ExportData*.txt
 260209_10NaCZA_100 cycles/
 250929_Blanks/
 251013_K-ZA_Cycles 1-20_good/
+260717_NaCZA_Cond6/
+260810_KZA_Cond0/
+tests/fixtures/
 build/
 .claude/
 notebooks/

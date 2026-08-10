@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["jupyter"]
+dev = ["jupyter", "pytest"]
 
 [project.scripts]
 effi-analysis = "backend.effi.cli:main"

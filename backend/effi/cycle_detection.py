@@ -362,6 +362,95 @@ def detect_capture_purge_cza(
     return pairs
 
 
+def detect_capture_purge_co2(
+    df: pd.DataFrame,
+    *,
+    co2_mfc_col: str,
+    n2_rsp_col: str = "6#HighPN2 RSP",
+    co2_mfc_on: float = 1.0,
+    n2_off_threshold: float = 1.0,
+    time_col: str = "Timestamp",
+) -> list[tuple[Window, Window]]:
+    """Detect capture and purge windows keyed on the CO2 MFC.
+
+    For recipes where N2 holds a steady high flow straight through capture and
+    purge (e.g. atmospheric ZA), the CO2 MFC is the only signal that marks the
+    capture step.  Neither :func:`detect_capture_purge_windows` (which looks
+    for an N2 dip) nor :func:`detect_capture_purge_cza` (which looks for N2
+    ON→OFF transitions) fires on these runs.
+
+    Algorithm:
+    1. Capture = each contiguous span where ``co2_mfc_col`` exceeds
+       ``co2_mfc_on``.  The N2 setpoint may step around within the span
+       (e.g. 201 → 193 sccm); that is ignored.
+    2. Purge = from the end of capture until N2 drops to or below
+       ``n2_off_threshold`` (i.e. sweep gas is still flowing but CO2 is off).
+
+    Parameters
+    ----------
+    df : DataFrame
+        Merged DataFrame with N2 and CO2 signals.
+    co2_mfc_col : str
+        CO2 MFC column marking the capture step. Required.
+    n2_rsp_col : str
+        Column name for the N2 RSP signal that bounds the purge.
+    co2_mfc_on : float
+        Threshold above which CO2 is considered flowing.
+    n2_off_threshold : float
+        Threshold at or below which N2 is considered off, ending the purge.
+    time_col : str
+        Timestamp column name.
+
+    Returns
+    -------
+    list of (capture_window, purge_window) tuples
+    """
+    co2 = df[co2_mfc_col].fillna(0).values
+    n2 = df[n2_rsp_col].fillna(0).values
+    timestamps = df[time_col]
+    n = len(co2)
+
+    pairs: list[tuple[Window, Window]] = []
+    i = 0
+    while i < n:
+        if co2[i] <= co2_mfc_on:
+            i += 1
+            continue
+
+        # Capture: contiguous CO2-on span
+        cap_start = i
+        while i < n and co2[i] > co2_mfc_on:
+            i += 1
+        cap_end = i - 1
+
+        # Purge: CO2 back off, N2 still sweeping
+        purge_start = min(cap_end + 1, n - 1)
+        j = purge_start
+        while j < n and n2[j] > n2_off_threshold:
+            j += 1
+        purge_end = max(purge_start, j - 1)
+
+        pairs.append((
+            Window(
+                label="capture",
+                start=timestamps.iloc[cap_start],
+                end=timestamps.iloc[cap_end],
+                start_idx=cap_start,
+                end_idx=cap_end,
+            ),
+            Window(
+                label="purge",
+                start=timestamps.iloc[purge_start],
+                end=timestamps.iloc[purge_end],
+                start_idx=purge_start,
+                end_idx=purge_end,
+            ),
+        ))
+        i = max(i, purge_end + 1)
+
+    return pairs
+
+
 def build_full_cycles(
     df: pd.DataFrame,
     *,
@@ -445,7 +534,20 @@ def build_full_cycles(
             co2_mfc_col=co2_mfc_col,
             time_col=time_col,
         )
-    
+
+    # Last resort: recipes where N2 holds a steady high flow through both
+    # capture and purge, so the CO2 MFC is the only marker of the capture
+    # step (e.g. atmospheric ZA).  Runs only when the strategies above found
+    # nothing, so it cannot change results for experiments they handle.
+    if len(capture_purge_pairs) == 0 and co2_mfc_col is not None:
+        capture_purge_pairs = detect_capture_purge_co2(
+            df,
+            co2_mfc_col=co2_mfc_col,
+            n2_rsp_col=n2_rsp_col,
+            time_col=time_col,
+        )
+
+
     # Step 3: Pair capture/purge with hydrogenation
     # Greedy forward matching: each pair is consumed at most once.
     full_cycles = []
