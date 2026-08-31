@@ -26,11 +26,33 @@ pip install .
 
 ### Updating
 
-Open a terminal in the project directory and run:
+**The easy way.** In the project folder, double-click:
+
+- **macOS** — `update.command`
+- **Windows** — `update.bat`
+
+Or from a terminal, anywhere:
+
+```bash
+bash /path/to/Effi-Reactor-Analysis/update.sh
+```
+
+It downloads the latest version, reinstalls it, and tells you what changed.
+If your environment isn't named `effi-env`, pass the name: `bash update.sh my-env`.
+
+The updater stops without changing anything if you have local edits to tracked
+files, or if it can't find conda or the environment — it prints what to do in
+each case.
+
+**The manual way.** Open a terminal in the project directory and run:
+
 ```bash
 git pull
 pip install .
 ```
+
+Both steps are required. This is a copy install, not an editable one, so
+`git pull` on its own does not change the installed app until you reinstall.
 
 ## Launching
 
