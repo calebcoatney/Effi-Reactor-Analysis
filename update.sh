@@ -25,8 +25,35 @@ echo  "Repository: $REPO"
 echo  "Environment: $ENV_NAME"
 
 # --- sanity: is this actually the repo? -----------------------------------
-[ -d .git ]          || fail "$REPO is not a git repository. Make sure update.sh is still inside the folder you cloned."
-[ -f pyproject.toml ] || fail "pyproject.toml not found in $REPO. This does not look like the Effi repo."
+[ -f pyproject.toml ] || fail "pyproject.toml not found in $REPO. This does not look like the Effi folder."
+
+if [ ! -d .git ]; then
+    cat <<EOF
+
+ERROR: this folder has no git repository in it, so there is nothing to update from.
+
+  $REPO
+
+This usually means the folder came from GitHub's "Download ZIP" button rather
+than from 'git clone'. A downloaded copy has no link back to GitHub, so neither
+this script nor 'git pull' can update it.
+
+To fix it once, get a real clone (this does NOT touch your existing folder or
+any data in it):
+
+  cd ~
+  git clone https://github.com/calebcoatney/Effi-Reactor-Analysis.git
+  cd Effi-Reactor-Analysis
+  conda run -n $ENV_NAME python -m pip install .
+
+After that, updating is just double-clicking update.command in the new folder.
+The old folder can be deleted once you have checked you keep any results saved
+inside it.
+
+EOF
+    read -r -p "Press Enter to close..." _
+    exit 1
+fi
 
 # --- find conda -----------------------------------------------------------
 CONDA=""
