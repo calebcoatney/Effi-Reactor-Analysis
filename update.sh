@@ -38,17 +38,18 @@ This usually means the folder came from GitHub's "Download ZIP" button rather
 than from 'git clone'. A downloaded copy has no link back to GitHub, so neither
 this script nor 'git pull' can update it.
 
-To fix it once, get a real clone (this does NOT touch your existing folder or
-any data in it):
+To fix it once, replace this folder with a real clone in the same place. Your
+current folder is renamed, not deleted, so nothing inside it is lost:
 
-  cd ~
-  git clone https://github.com/calebcoatney/Effi-Reactor-Analysis.git
-  cd Effi-Reactor-Analysis
+  cd "$(dirname "$REPO")"
+  mv "$(basename "$REPO")" "$(basename "$REPO")-old"
+  git clone https://github.com/calebcoatney/Effi-Reactor-Analysis.git "$(basename "$REPO")"
+  cd "$(basename "$REPO")"
   conda run -n $ENV_NAME python -m pip install .
 
-After that, updating is just double-clicking update.command in the new folder.
-The old folder can be deleted once you have checked you keep any results saved
-inside it.
+That leaves the app at exactly the path you use now. Afterwards, updating is
+just double-clicking update.command. Copy across anything you had saved inside
+the old folder, then it can be deleted.
 
 EOF
     read -r -p "Press Enter to close..." _
