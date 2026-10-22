@@ -2,10 +2,35 @@
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pandas as pd
 
 from .models import Cycle, Window
+
+# CO2 MFC setpoint columns seen so far, in auto-detect priority order.  The
+# rig's MFC slots get relabelled between campaigns (5#10%CO2 -> 5#dilNO ->
+# 5#flueCO2, 2#flueCO2 -> 2#pureCO2), so any other "<slot>#...CO2... RSP"
+# column is a candidate too; known names go first so existing experiments
+# resolve exactly as before.
+KNOWN_CO2_MFC_COLS = ["5#10%CO2 RSP", "4#CO2 RSP", "2#flueCO2 RSP", "2#pureCO2 RSP"]
+_CO2_MFC_RE = re.compile(r"^\d+#.*CO2.* RSP$")
+
+
+def co2_mfc_columns(columns) -> list[str]:
+    """CO2 MFC setpoint columns present in *columns*, known names first."""
+    cols = list(columns)
+    known = [c for c in KNOWN_CO2_MFC_COLS if c in cols]
+    return known + [c for c in cols if _CO2_MFC_RE.match(c) and c not in known]
+
+
+def detect_co2_mfc_col(df: pd.DataFrame, threshold: float = 0.5) -> str | None:
+    """Return the first CO2 MFC column that is ever switched on, or None."""
+    for col in co2_mfc_columns(df.columns):
+        if (df[col].fillna(0).abs() > threshold).any():
+            return col
+    return None
 
 
 def detect_cycles(
@@ -503,15 +528,11 @@ def build_full_cycles(
     )
 
     # Auto-detect the active CO2 RSP column if not supplied.  Different
-    # experiments use different MFCs (e.g. 5#10%CO2, 4#CO2, 2#flueCO2); the
+    # experiments use different MFCs (e.g. 5#10%CO2, 4#CO2, 5#flueCO2); the
     # active one is the column with non-zero values.  This is critical for
     # the CZA fallback, which can't find captures without it.
     if co2_mfc_col is None:
-        candidates = ["5#10%CO2 RSP", "4#CO2 RSP", "2#flueCO2 RSP", "2#pureCO2 RSP"]
-        for cand in candidates:
-            if cand in df.columns and (df[cand].fillna(0).abs() > 0.5).any():
-                co2_mfc_col = cand
-                break
+        co2_mfc_col = detect_co2_mfc_col(df)
 
     # Step 2: Get capture/purge pairs.
     #

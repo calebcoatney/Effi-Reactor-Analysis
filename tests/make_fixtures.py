@@ -24,7 +24,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend.effi.cycle_detection import build_full_cycles  # noqa: E402
+from backend.effi.cycle_detection import build_full_cycles, co2_mfc_columns  # noqa: E402
 from backend.effi.data_loading import load_experiment  # noqa: E402
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -36,10 +36,13 @@ DATASETS = [
     ("260209_10NaCZA_100 cycles", "CZA", 0, "260209_nacza_100cyc"),
     ("260717_NaCZA_Cond6", "CZA", 0, "260717_nacza_cond6"),
     ("260810_KZA_Cond0", "ZA", 0, "260810_kza_cond0"),
+    ("261013_NaCZA_CondB + Cond9", "CZA", 0, "261013_nacza_condb_cond9"),
+    ("261021_NaCZA_CondC + Cond9", "CZA", 0, "261021_nacza_condc_cond9"),
 ]
 
-# Every column build_full_cycles touches: the detection signals plus each
-# CO2 MFC candidate, so co2_mfc_col auto-detection behaves identically.
+# Every column build_full_cycles touches: the detection signals, plus (added
+# per dataset) each CO2 MFC column, so co2_mfc_col auto-detection behaves
+# identically.
 SIGNAL_COLS = [
     "Timestamp",
     "6#HighPN2 RSP",
@@ -47,10 +50,6 @@ SIGNAL_COLS = [
     "3#HighPH2 PV",
     "Reactor P RSP",
     "Reactor T RSP",
-    "5#10%CO2 RSP",
-    "4#CO2 RSP",
-    "2#flueCO2 RSP",
-    "2#pureCO2 RSP",
 ]
 
 
@@ -84,7 +83,7 @@ def main() -> None:
         )
         cycles = build_full_cycles(df, catalyst_type=catalyst)
 
-        cols = [c for c in SIGNAL_COLS if c in df.columns]
+        cols = [c for c in SIGNAL_COLS if c in df.columns] + co2_mfc_columns(df.columns)
         slim = df[cols].copy()
         slim.to_csv(FIXTURES / f"{name}.csv.gz", index=False, compression="gzip")
 

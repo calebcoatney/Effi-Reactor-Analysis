@@ -81,13 +81,17 @@ export default function FileSelector({ onLoaded }: Props) {
   const [catalystType, setCatalystType] = useState<"CZA" | "ZA">("CZA");
   const [co2MfcCol, setCo2MfcCol] = useState<string | null>(null);
 
-  // known CO2 MFC options
-  const co2MfcOptions = [
-    "5#10%CO2 RSP",
-    "4#CO2 RSP", 
-    "2#flueCO2 RSP",
-    "2#pureCO2 RSP",
-  ];
+  // CO2 MFC options: the channels named in this folder's reactor export,
+  // falling back to the known names before a folder is picked
+  const co2MfcOptions = discovered?.co2_mfc_cols?.length
+    ? discovered.co2_mfc_cols
+    : [
+        "5#10%CO2 RSP",
+        "4#CO2 RSP",
+        "2#flueCO2 RSP",
+        "2#pureCO2 RSP",
+        "5#flueCO2 RSP",
+      ];
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +104,8 @@ export default function FileSelector({ onLoaded }: Props) {
           setDiscovered(d);
           setRoles(initRoles(d));
           setExpanded(false);
+          // a channel picked for the last folder may not exist in this one
+          setCo2MfcCol(null);
         })
         .catch(() => {
           setDiscovered(null);

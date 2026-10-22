@@ -36,6 +36,7 @@ export interface DiscoverResponse {
   oxygen_file: string | null;
   all_txt: string[];
   all_csv: string[];
+  co2_mfc_cols?: string[];
 }
 
 export interface WindowInfo {

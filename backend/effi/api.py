@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .cycle_detection import build_full_cycles
+from .cycle_detection import build_full_cycles, co2_mfc_columns
 from .data_loading import load_experiment
 from .integration import NATIVE_SPECIES, analyze_experiment, integrate_species
 from .models import Cycle
@@ -94,6 +94,14 @@ def discover_files(path: str):
     # All .txt and .csv files for manual override
     all_txt = sorted(f.name for f in p.glob("*.txt"))
     all_csv = sorted(f.name for f in p.glob("*.csv"))
+    # CO2 MFC channels named in the reactor export header, for the picker
+    co2_mfc_cols: list[str] = []
+    if reactor_files:
+        try:
+            header = pd.read_csv(reactor_files[0], sep="\t", nrows=0).columns
+            co2_mfc_cols = co2_mfc_columns(header)
+        except Exception:
+            pass
     return {
         "path": str(p),
         "reactor_files": reactor_files,
@@ -101,6 +109,7 @@ def discover_files(path: str):
         "oxygen_file": oxygen_files[0] if oxygen_files else None,
         "all_txt": all_txt,
         "all_csv": all_csv,
+        "co2_mfc_cols": co2_mfc_cols,
     }
 
 

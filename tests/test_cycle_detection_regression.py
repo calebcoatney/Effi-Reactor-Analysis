@@ -28,10 +28,10 @@ from backend.effi.cycle_detection import (
     detect_capture_purge_co2,
     detect_capture_purge_cza,
     detect_capture_purge_windows,
+    detect_co2_mfc_col,
 )
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
-CO2_CANDIDATES = ["5#10%CO2 RSP", "4#CO2 RSP", "2#flueCO2 RSP", "2#pureCO2 RSP"]
 
 
 def fixture_names() -> list[str]:
@@ -55,14 +55,6 @@ def window_dict(w):
         "start_idx": int(w.start_idx),
         "end_idx": int(w.end_idx),
     }
-
-
-def detected_co2_col(df: pd.DataFrame) -> str | None:
-    """Mirror the auto-detection in build_full_cycles."""
-    for cand in CO2_CANDIDATES:
-        if cand in df.columns and (df[cand].fillna(0).abs() > 0.5).any():
-            return cand
-    return None
 
 
 pytestmark = pytest.mark.skipif(
@@ -114,6 +106,8 @@ EXPECTED_STRATEGY = {
     "260209_nacza_100cyc": "n2_dip",
     "260717_nacza_cond6": "cza",
     "260810_kza_cond0": "co2",
+    "261013_nacza_condb_cond9": "cza",
+    "261021_nacza_condc_cond9": "cza",
 }
 
 
@@ -121,7 +115,7 @@ EXPECTED_STRATEGY = {
 def test_capture_purge_strategy_is_stable(name):
     """Pin which detector wins, so reordering the fallback chain fails loudly."""
     df, golden = load_fixture(name)
-    co2_col = detected_co2_col(df)
+    co2_col = detect_co2_mfc_col(df)
 
     if detect_capture_purge_windows(df, co2_mfc_col=co2_col):
         strategy = "n2_dip"
@@ -164,3 +158,23 @@ def test_atmospheric_za_capture_is_co2_keyed():
     assert [c.cycle_id for c in cycles] == list(range(1, 11))
     # The 12.7 h pretreatment hydrogenation has no preceding capture and is dropped.
     assert cycles[0].hydrogenation.start > pd.Timestamp("2026-08-06 06:00")
+
+
+def test_flue_co2_on_slot_5_is_auto_detected():
+    """Martha's October NaCZA runs feed CO2 through 5#flueCO2.
+
+    4#CO2 and 2#pureCO2 are in the export but never switched on, and the
+    hardcoded candidate list did not include 5#flueCO2, so auto-detection
+    found no CO2 MFC and every cycle was dropped (0 cycles).
+    """
+    for name in ("261013_nacza_condb_cond9", "261021_nacza_condc_cond9"):
+        df, golden = load_fixture(name)
+        assert detect_co2_mfc_col(df) == "5#flueCO2 RSP"
+
+        cycles = build_full_cycles(df, catalyst_type="CZA")
+        assert len(cycles) == 20
+        for c in cycles:
+            cap_min = (c.capture.end - c.capture.start).total_seconds() / 60
+            assert 29 <= cap_min <= 31, f"{name} cycle {c.cycle_id}: capture {cap_min:.0f} min"
+            assert c.high_p_hydrogenation is not None
+            assert c.low_p_hydrogenation is not None
