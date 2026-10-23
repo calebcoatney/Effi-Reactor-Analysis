@@ -80,11 +80,16 @@ if ! "$CONDA" env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
     fail "No conda environment named '$ENV_NAME'. Re-run as: bash update.sh <your-env-name>"
 fi
 
-# --- refuse to clobber local edits ----------------------------------------
+# --- set local edits aside, never lose them --------------------------------
+# Asking the user to run 'git stash' themselves was a dead end: the window
+# only waits for Enter, so a typed command was swallowed and nothing pulled.
+# A stash keeps every change and can be restored with 'git stash pop'.
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
     say "You have local changes to tracked files:"
     git status --short --untracked-files=no
-    fail "Pulling would overwrite these. Send Caleb this list, or run 'git stash' if you know you don't need them."
+    git stash push -m "update.sh $(date '+%Y-%m-%d %H:%M'): set aside before updating" >/dev/null \
+        || fail "Could not set these changes aside. Send Caleb this message."
+    echo "Set aside (not deleted) so the update can go ahead. Caleb can see them with: git stash list"
 fi
 
 BEFORE="$(git rev-parse --short HEAD)"
