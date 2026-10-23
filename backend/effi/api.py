@@ -13,7 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .cycle_detection import build_full_cycles, co2_mfc_columns
+from . import __version__
+from .cycle_detection import build_full_cycles, co2_mfc_columns, resolve_co2_mfc_col
 from .data_loading import load_experiment
 from .integration import NATIVE_SPECIES, analyze_experiment, integrate_species
 from .models import Cycle
@@ -59,6 +60,16 @@ app.add_middleware(
 def _require_loaded():
     if state.df is None:
         raise HTTPException(status_code=400, detail="No experiment loaded. POST /experiment/load first.")
+
+
+# ---------------------------------------------------------------------------
+# GET /version
+# ---------------------------------------------------------------------------
+
+
+@app.get("/version")
+def get_version():
+    return {"version": __version__}
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +152,8 @@ def load_experiment_endpoint(req: LoadRequest):
         offset=pd.Timedelta(hours=req.offset_hours),
     )
     state.catalyst_type = req.catalyst_type
-    state.cycles = build_full_cycles(state.df, catalyst_type=req.catalyst_type, co2_mfc_col=req.co2_mfc_col)
+    co2_mfc_col = resolve_co2_mfc_col(state.df, req.co2_mfc_col)
+    state.cycles = build_full_cycles(state.df, catalyst_type=req.catalyst_type, co2_mfc_col=co2_mfc_col)
     state.results = analyze_experiment(state.df, state.cycles, catalyst_type=req.catalyst_type)
 
     # Auto-discover reactant base names (same logic as plot_merged)
@@ -158,6 +170,8 @@ def load_experiment_endpoint(req: LoadRequest):
         "column_names": state.df.columns.tolist(),
         "n_cycles": len(state.cycles),
         "catalyst_type": state.catalyst_type,
+        "co2_mfc_col": co2_mfc_col,
+        "version": __version__,
         "time_range": {
             "start": state.df["Timestamp"].min().isoformat(),
             "end": state.df["Timestamp"].max().isoformat(),

@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from backend.effi.cycle_detection import co2_mfc_columns, detect_co2_mfc_col
+from backend.effi.cycle_detection import (
+    co2_mfc_columns,
+    detect_co2_mfc_col,
+    resolve_co2_mfc_col,
+)
 
 
 def test_unlisted_co2_mfc_is_a_candidate():
@@ -40,3 +44,19 @@ def test_active_channel_is_picked_over_idle_known_ones():
 def test_no_active_channel_returns_none():
     df = pd.DataFrame({"4#CO2 RSP": [0.0, 0.2], "5#dilNO RSP": [0.0, 50.0]})
     assert detect_co2_mfc_col(df) is None
+
+
+def test_missing_or_idle_pick_falls_back_to_auto():
+    # A pick the file doesn't have used to raise KeyError; an idle one gave 0 cycles.
+    df = pd.DataFrame({
+        "4#CO2 RSP": [0.0, 0.0, 0.0],
+        "5#flueCO2 RSP": [0.0, 90.0, 0.0],
+    })
+    assert resolve_co2_mfc_col(df, "2#flueCO2 RSP") == "5#flueCO2 RSP"
+    assert resolve_co2_mfc_col(df, "4#CO2 RSP") == "5#flueCO2 RSP"
+    assert resolve_co2_mfc_col(df, None) == "5#flueCO2 RSP"
+
+
+def test_active_pick_is_kept():
+    df = pd.DataFrame({"4#CO2 RSP": [0.0, 20.0], "5#flueCO2 RSP": [0.0, 90.0]})
+    assert resolve_co2_mfc_col(df, "5#flueCO2 RSP") == "5#flueCO2 RSP"

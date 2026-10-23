@@ -19,6 +19,8 @@ export interface LoadResponse {
   column_names: string[];
   n_cycles: number;
   catalyst_type: string;
+  co2_mfc_col: string | null;
+  version: string;
   time_range: { start: string; end: string };
 }
 
@@ -105,6 +107,10 @@ export function loadExperiment(req: LoadRequest): Promise<LoadResponse> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
+}
+
+export function getVersion(): Promise<{ version: string }> {
+  return apiFetch("/version");
 }
 
 export function browseDirectory(path = "."): Promise<BrowseResponse> {

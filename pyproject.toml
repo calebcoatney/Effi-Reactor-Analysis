@@ -1,6 +1,6 @@
 [project]
 name = "effi"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Effi reactor cycle analysis tools"
 requires-python = ">=3.11"
 dependencies = [
@@ -17,6 +17,9 @@ dev = ["jupyter", "pytest"]
 
 [project.scripts]
 effi-analysis = "backend.effi.cli:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "backend.effi.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["backend*"]

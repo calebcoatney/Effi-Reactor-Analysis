@@ -29,8 +29,10 @@ def main(argv: list[str] | None = None) -> None:
         print("   Run: cd frontend && npm run build")
         sys.exit(1)
 
+    from . import __version__
+
     url = f"http://{args.host}:{args.port}/app"
-    print(f"Starting Effi Analysis at {url}")
+    print(f"Starting Effi Analysis v{__version__} at {url}")
 
     if not args.no_browser:
         # Open browser after a short delay so the server can start

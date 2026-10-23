@@ -106,6 +106,16 @@ say "[2/2] Installing into '$ENV_NAME'..."
 "$CONDA" run -n "$ENV_NAME" --no-capture-output python -m pip install . --quiet \
     || fail "Install failed. Send Caleb the message above."
 
+# --- confirm the environment now runs this version ---------------------------
+# -I keeps Python from importing the repo folder itself, so this sees exactly
+# what 'effi-analysis' will run.
+WANT="$(sed -n 's/^__version__ = "\([^"]*\)".*/\1/p' backend/effi/__init__.py)"
+GOT="$("$CONDA" run -n "$ENV_NAME" python -I -c \
+    "import backend.effi as e; print(e.__version__)" 2>/dev/null | tr -d '\r' | tail -n 1)"
+[ "$GOT" = "$WANT" ] \
+    || fail "The install did not take: the repo is version $WANT but '$ENV_NAME' runs '${GOT:-unknown}'. Send Caleb this message."
+echo "Installed version $GOT."
+
 say "Done. Start the app by running:  effi-analysis"
 echo
 read -r -p "Press Enter to close..." _

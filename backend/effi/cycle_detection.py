@@ -33,6 +33,19 @@ def detect_co2_mfc_col(df: pd.DataFrame, threshold: float = 0.5) -> str | None:
     return None
 
 
+def resolve_co2_mfc_col(
+    df: pd.DataFrame, requested: str | None = None, threshold: float = 0.5
+) -> str | None:
+    """The requested CO2 MFC column if it exists and is ever on, else auto-detect.
+
+    A pick that is missing from this file, or idle in it, cannot mark a
+    capture; using it anyway gave 0 cycles (or a KeyError) with no hint why.
+    """
+    if requested in df.columns and (df[requested].fillna(0).abs() > threshold).any():
+        return requested
+    return detect_co2_mfc_col(df, threshold)
+
+
 def detect_cycles(
     df: pd.DataFrame,
     *,
@@ -527,12 +540,12 @@ def build_full_cycles(
         time_col=time_col,
     )
 
-    # Auto-detect the active CO2 RSP column if not supplied.  Different
-    # experiments use different MFCs (e.g. 5#10%CO2, 4#CO2, 5#flueCO2); the
-    # active one is the column with non-zero values.  This is critical for
-    # the CZA fallback, which can't find captures without it.
-    if co2_mfc_col is None:
-        co2_mfc_col = detect_co2_mfc_col(df)
+    # Auto-detect the active CO2 RSP column if not supplied (or if the one
+    # supplied is missing or idle).  Different experiments use different MFCs
+    # (e.g. 5#10%CO2, 4#CO2, 5#flueCO2); the active one is the column with
+    # non-zero values.  This is critical for the CZA fallback, which can't
+    # find captures without it.
+    co2_mfc_col = resolve_co2_mfc_col(df, co2_mfc_col)
 
     # Step 2: Get capture/purge pairs.
     #

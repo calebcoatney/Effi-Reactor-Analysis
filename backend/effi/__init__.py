@@ -1,5 +1,10 @@
 """Effi reactor cycle analysis tools."""
 
+# Single source of the version: pyproject.toml reads it from here.  Bump it
+# with every fix that ships, so the version the app shows tells you whether
+# an install has picked the fix up.
+__version__ = "0.2.0"
+
 from .data_loading import (
     load_effi_reactor_data,
     load_ir_data,
