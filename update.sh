@@ -111,7 +111,7 @@ say "[2/2] Installing into '$ENV_NAME'..."
 # what 'effi-analysis' will run.
 WANT="$(sed -n 's/^__version__ = "\([^"]*\)".*/\1/p' backend/effi/__init__.py)"
 GOT="$("$CONDA" run -n "$ENV_NAME" python -I -c \
-    "import backend.effi as e; print(e.__version__)" 2>/dev/null | tr -d '\r' | tail -n 1)"
+    "import backend.effi as e; print(e.__version__)" 2>/dev/null | tr -d '\r' | awk 'NF { v = $1 } END { print v }')"
 [ "$GOT" = "$WANT" ] \
     || fail "The install did not take: the repo is version $WANT but '$ENV_NAME' runs '${GOT:-unknown}'. Send Caleb this message."
 echo "Installed version $GOT."
